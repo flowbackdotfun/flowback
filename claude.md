@@ -86,7 +86,7 @@ flowback/
 3. Frontend calls `GET /quote` on relay → relay calls Jupiter v6 API → returns quote + cashback estimate
 4. User clicks swap, signs an **intent message** (NOT a transaction) in their wallet
 5. Frontend POSTs signed intent to `POST /intent` on relay
-6. Relay validates the intent signature using `@solana/web3.js`
+6. Relay validates the intent signature using `@solana/kit`
 7. Relay broadcasts a **hint** to all connected searchers via uWS WebSocket:
    - Reveals: token pair, size bucket (small/medium/large/whale), estimated price impact bps
    - Hides: exact amount, user wallet address
@@ -175,7 +175,9 @@ pub struct ProtocolConfig {
 DATABASE_URL=postgresql://...
 SOLANA_RPC_URL=https://api.devnet.solana.com
 JITO_BLOCK_ENGINE_URL=https://frankfurt.mainnet.block-engine.jito.wtf  # use devnet equivalent
-JUPITER_API_URL=https://quote-api.jup.ag/v6
+JUPITER_API_URL=https://quote-api.jup.ag/v6                             # preview /quote (no auth)
+JUPITER_BUILD_API_URL=https://api.jup.ag/swap/v2                        # post-auction /build (x-api-key)
+JUPITER_API_KEY=<jupiter api key>                                       # required for /build
 FLOWBACK_PROGRAM_ID=<deployed program id>
 TREASURY_WALLET=<base58 pubkey>
 RELAY_KEYPAIR=<base58 encoded keypair JSON>  # relay pays tx fees
@@ -212,8 +214,30 @@ Two separate WebSocket paths:
 
 - On connect: bot sends `{ type: "auth", pubkey, signature }` — signature proves ownership of pubkey
 - Server sends: `{ type: "hint", hintId, tokenPair, sizeBucket, priceImpactBps, auctionDeadlineMs }`
-- Client sends: `{ type: "bid", hintId, userCashbackLamports, jitoTipLamports, backrunTx: base64 }`
+- Client sends: `{ type: "bid", hintId, userCashbackLamports, jitoTipLamports, backrunTx, cashbackTx, tipTx }` — all three txs pre-signed by the searcher, base64 encoded
 - After auction: server sends `{ type: "auction_result", hintId, won: bool, yourBid, winningBid }`
+
+Why all three pre-signed: the searcher constructs and signs Tx2 (backrun), Tx3 (`settle_cashback`), and Tx4 (Jito tip) themselves. The relay only prepends Tx1 (the user's Jupiter swap) after picking a winner. This avoids a post-close WS round-trip to collect Tx3's signature and fits the Jito bundle pattern. The relay MUST decode Tx3 before accepting the bid and verify semantic correctness (see below).
+
+### Bid validation (two tiers)
+
+**Tier 1 — in-window, on bid receipt** (cheap, no RPC):
+
+- Decode `cashbackTx`, locate the `settle_cashback` instruction, verify:
+  - `programId` equals the deployed FlowBack program ID
+  - 8-byte Anchor discriminator matches `sha256("global:settle_cashback")[0..8]`
+  - `bid_amount` arg (u64 LE) equals `userCashbackLamports` from the bid message
+  - `user` account equals `intent.user`
+  - `treasury` account equals the protocol config's treasury
+- Reject bid if any check fails. This is the critical defense against a searcher declaring a big cashback in the WS bid message but embedding a tiny `bid_amount` in Tx3 to shortchange the user.
+
+**Tier 2 — post-close, winner only** (expensive, hits RPC):
+
+- After the 200ms window closes and bids are sorted by `userCashbackLamports` descending, iterate from the top:
+  - Call `simulateTransaction` on the winner's `backrunTx` with `replaceRecentBlockhash: true` and a 1000ms timeout
+  - If it returns no error → use this winner, build the bundle, submit
+  - If it fails → drop this bid, try the next-highest, repeat up to 3 candidates
+- Simulation is only run on the prospective winner(s), never on losing bids. This keeps the RPC budget small and avoids duplicating work that rational searchers already do locally.
 
 `/status` — for frontend
 
@@ -526,11 +550,11 @@ cd relay && pnpm db:studio    # drizzle studio
 
 ```
 Anchor program:    anchor-lang = "1.0.0"
-Relay:             @jito-labs/jito-ts, @solana/web3.js, uWebSockets.js, drizzle-orm, express
+Relay:             jito-ts, @solana/kit, uWebSockets.js, drizzle-orm, express
 Frontend:          @solana/wallet-adapter-base \
                    @solana/wallet-adapter-react \
                    @solana/wallet-adapter-react-ui \
                    @solana/wallet-adapter-wallets \
-                   @solana/web3.js, next, tailwind, shadcn
-Seed bot:          @solana/web3.js (same ws connection as external searchers)
+                   @solana/kit, next, tailwind, shadcn
+Seed bot:          @solana/kit (same ws connection as external searchers)
 ```
