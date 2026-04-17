@@ -1,6 +1,8 @@
-import type { JupiterQuoteResponse } from "../jupiter/client.js";
-
 export type SizeBucket = "small" | "medium" | "large" | "whale";
+
+export interface AuctionMarketContext {
+  priceImpactPct: string;
+}
 
 export type AuctionStatus = "open" | "closed" | "settled" | "fallback";
 
@@ -11,9 +13,6 @@ export interface SwapIntent {
   inputAmount: bigint;
   minOutputAmount: bigint;
   maxSlippageBps: number;
-  deadline: number;
-  nonce: string;
-  signature: string;
 }
 
 export interface TokenPair {
@@ -43,7 +42,7 @@ export interface SearcherBid {
 export interface AuctionState {
   hintId: string;
   intent: SwapIntent;
-  jupiterQuote: JupiterQuoteResponse;
+  market: AuctionMarketContext;
   bids: SearcherBid[];
   status: AuctionStatus;
   createdAt: number;

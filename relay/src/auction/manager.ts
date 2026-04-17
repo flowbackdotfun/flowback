@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
-import type { JupiterQuoteResponse } from "../jupiter/client.js";
 import type {
+  AuctionMarketContext,
   AuctionState,
   SearcherBid,
   SearcherHint,
@@ -20,6 +20,12 @@ export interface AuctionManagerOptions {
   auctionWindowMs?: number;
 }
 
+export interface AuctionHandle {
+  hintId: string;
+  // Resolves with bids sorted desc by userCashbackLamports after the window closes.
+  resolved: Promise<SearcherBid[]>;
+}
+
 export class AuctionManager {
   private readonly auctions = new Map<string, AuctionState>();
   private readonly searcherRegistry: SearcherRegistry;
@@ -34,8 +40,8 @@ export class AuctionManager {
 
   startAuction(
     intent: SwapIntent,
-    jupiterQuote: JupiterQuoteResponse,
-  ): Promise<SearcherBid[]> {
+    market: AuctionMarketContext,
+  ): AuctionHandle {
     const hintId = randomUUID();
     const createdAt = Date.now();
     const auctionDeadlineMs = createdAt + this.auctionWindowMs;
@@ -48,7 +54,7 @@ export class AuctionManager {
     const state: AuctionState = {
       hintId,
       intent,
-      jupiterQuote,
+      market,
       bids: [],
       status: "open",
       createdAt,
@@ -63,14 +69,14 @@ export class AuctionManager {
         outputMint: intent.outputMint,
       },
       sizeBucket: bucketFor(intent.inputAmount),
-      priceImpactBps: priceImpactToBps(jupiterQuote.priceImpactPct),
+      priceImpactBps: priceImpactToBps(market.priceImpactPct),
       auctionDeadlineMs,
     };
     this.searcherRegistry.broadcast(hint);
 
     setTimeout(() => this.closeAuction(hintId), this.auctionWindowMs);
 
-    return promise;
+    return { hintId, resolved: promise };
   }
 
   submitBid(hintId: string, bid: SearcherBid): void {
@@ -103,7 +109,7 @@ export class AuctionManager {
   }
 }
 
-function bucketFor(inputAmountLamports: bigint): SizeBucket {
+export function bucketFor(inputAmountLamports: bigint): SizeBucket {
   const ONE_SOL = 1_000_000_000n;
   if (inputAmountLamports < ONE_SOL) return "small";
   if (inputAmountLamports < 10n * ONE_SOL) return "medium";
