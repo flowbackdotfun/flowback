@@ -77,10 +77,11 @@ export function validateCashbackTx(
       if (bidAmount !== expected.bidAmountLamports) return false;
 
       const accountIndices = ix.accountIndices ?? [];
-      if (accountIndices.length < 3) return false;
+      // Anchor order: searcher, config, user_account, treasury, system_program
+      if (accountIndices.length < 4) return false;
 
-      const userIdx = accountIndices[1]!;
-      const treasuryIdx = accountIndices[2]!;
+      const userIdx = accountIndices[2]!;
+      const treasuryIdx = accountIndices[3]!;
       if (
         userIdx >= msg.staticAccounts.length ||
         treasuryIdx >= msg.staticAccounts.length
