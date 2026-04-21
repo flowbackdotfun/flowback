@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   uuid,
@@ -53,6 +54,6 @@ export const searchers = pgTable("searchers", {
     mode: "bigint",
   })
     .notNull()
-    .default(0n),
+    .default(sql`0`),
   lastSeenAt: timestamp("last_seen_at"),
 });
