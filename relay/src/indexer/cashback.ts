@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { PublicKey } from "@solana/web3.js";
-import { createSolanaRpcSubscriptions } from "@solana/kit";
+import { address, createSolanaRpcSubscriptions } from "@solana/kit";
 import { eq, and, gt, desc } from "drizzle-orm";
 
 import { db as defaultDb } from "../db/client.js";
@@ -42,9 +42,10 @@ async function runSubscription(
   const db = deps.db ?? defaultDb;
 
   try {
+    const programAddr = address(deps.programId);
     const subscription = await deps.rpcSubscriptions
       .logsNotifications(
-        { mentions: [deps.programId as Parameters<typeof deps.rpcSubscriptions.logsNotifications>[0]["mentions"][0]] },
+        { mentions: [programAddr] },
         { commitment: "confirmed" },
       )
       .subscribe({ abortSignal: signal });
