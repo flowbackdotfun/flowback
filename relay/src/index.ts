@@ -8,11 +8,13 @@ import {
 } from "@solana/kit";
 
 import { AuctionManager } from "./auction/manager.js";
+import { ensureRelayDbSchema } from "./db/client.js";
 import { startCashbackIndexer } from "./indexer/cashback.js";
 import { createHistoryRoutes } from "./routes/history.route.js";
 import { createIntentRoutes } from "./routes/intent.route.js";
 import { createPrepareRoutes } from "./routes/prepare.route.js";
 import { createQuoteRoutes } from "./routes/quote.route.js";
+import { createWaitlistRoutes } from "./routes/waitlist.route.js";
 import { PreparedSwapStore } from "./services/prepare-store.js";
 import { attachSearcherWs, SearcherWsRegistry } from "./ws/searcher.js";
 import { attachUserStatusWs, UserStatusEmitter } from "./ws/user.js";
@@ -25,6 +27,8 @@ const FLOWBACK_PROGRAM_ID = requireEnv("FLOWBACK_PROGRAM_ID");
 const TREASURY_WALLET = requireEnv("TREASURY_WALLET");
 
 async function main(): Promise<void> {
+  await ensureRelayDbSchema();
+
   const rpc = createSolanaRpc(SOLANA_RPC_URL);
   const rpcSubscriptions = createSolanaRpcSubscriptions(
     toWsUrl(SOLANA_RPC_URL),
@@ -58,6 +62,7 @@ async function main(): Promise<void> {
     }),
   );
   httpApp.use(createHistoryRoutes());
+  httpApp.use(createWaitlistRoutes());
   httpApp.listen(REST_PORT, () => {
     console.log(`[relay] http listening on :${REST_PORT}`);
   });

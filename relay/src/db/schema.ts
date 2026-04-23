@@ -57,3 +57,11 @@ export const searchers = pgTable("searchers", {
     .default(sql`0`),
   lastSeenAt: timestamp("last_seen_at"),
 });
+
+export const waitlistSignups = pgTable("waitlist_signups", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull().unique(),
+  name: text("name"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});

@@ -10,3 +10,15 @@ if (!process.env.DATABASE_URL) {
 const queryClient = postgres(process.env.DATABASE_URL);
 
 export const db = drizzle(queryClient, { schema });
+
+export async function ensureRelayDbSchema(): Promise<void> {
+  await queryClient`
+    create table if not exists waitlist_signups (
+      id text primary key,
+      email text not null unique,
+      name text,
+      created_at timestamp not null default now(),
+      updated_at timestamp not null default now()
+    )
+  `;
+}
