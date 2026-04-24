@@ -1,19 +1,15 @@
 import "dotenv/config";
 
+const MOCK_JUPITER = process.env.MOCK_JUPITER === "true";
+
 const JUPITER_API_URL = process.env.JUPITER_API_URL;
 const JUPITER_BUILD_API_URL = process.env.JUPITER_BUILD_API_URL;
 const JUPITER_API_KEY = process.env.JUPITER_API_KEY;
 
-if (!JUPITER_API_URL) {
-  throw new Error("JUPITER_API_URL is not set");
-}
-
-if (!JUPITER_BUILD_API_URL) {
-  throw new Error("JUPITER_BUILD_API_URL is not set");
-}
-
-if (!JUPITER_API_KEY) {
-  throw new Error("JUPITER_API_KEY is not set");
+if (!MOCK_JUPITER) {
+  if (!JUPITER_API_URL) throw new Error("JUPITER_API_URL is not set");
+  if (!JUPITER_BUILD_API_URL) throw new Error("JUPITER_BUILD_API_URL is not set");
+  if (!JUPITER_API_KEY) throw new Error("JUPITER_API_KEY is not set");
 }
 
 export class JupiterError extends Error {
@@ -86,6 +82,22 @@ export async function getQuote(
   amount: bigint | number | string,
   slippageBps: number,
 ): Promise<JupiterQuoteResponse> {
+  if (MOCK_JUPITER) {
+    const inAmt = amount.toString();
+    const outAmt = String(Math.floor(Number(inAmt) * 0.99));
+    return {
+      inputMint,
+      inAmount: inAmt,
+      outputMint,
+      outAmount: outAmt,
+      otherAmountThreshold: String(Math.floor(Number(inAmt) * (1 - slippageBps / 10_000))),
+      swapMode: "ExactIn",
+      slippageBps,
+      priceImpactPct: "0.10",
+      routePlan: [],
+    };
+  }
+
   const params = new URLSearchParams({
     inputMint,
     outputMint,
@@ -115,6 +127,39 @@ export interface BuildSwapParams {
 export async function buildSwap(
   params: BuildSwapParams,
 ): Promise<JupiterBuildResponse> {
+  if (MOCK_JUPITER) {
+    const inAmt = params.amount.toString();
+    const outAmt = String(Math.floor(Number(inAmt) * 0.99));
+    return {
+      inputMint: params.inputMint,
+      outputMint: params.outputMint,
+      inAmount: inAmt,
+      outAmount: outAmt,
+      otherAmountThreshold: String(Math.floor(Number(inAmt) * 0.98)),
+      swapMode: "ExactIn",
+      slippageBps: params.slippageBps ?? 50,
+      priceImpactPct: "0.10",
+      routePlan: [],
+      setupInstructions: [],
+      // Memo program — no accounts, no signers, compiles cleanly
+      swapInstruction: {
+        programId: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
+        accounts: [],
+        data: Buffer.from("mock-swap").toString("base64"),
+      },
+      cleanupInstruction: null,
+      computeBudgetInstructions: [],
+      otherInstructions: [],
+      tipInstruction: null,
+      addressesByLookupTableAddress: {},
+      // 32 zero bytes in base58 — valid blockhash format
+      blockhashWithMetadata: {
+        blockhash: "11111111111111111111111111111111",
+        lastValidBlockHeight: 999_999_999,
+      },
+    };
+  }
+
   const query = new URLSearchParams({
     inputMint: params.inputMint,
     outputMint: params.outputMint,

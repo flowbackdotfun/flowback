@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { randomUUID } from "node:crypto";
 import type { Base64EncodedWireTransaction } from "@solana/kit";
 import { Keypair, VersionedTransaction } from "@solana/web3.js";
 import type { BundleResult } from "jito-ts/dist/gen/block-engine/bundle.js";
@@ -8,8 +9,10 @@ import {
 } from "jito-ts/dist/sdk/block-engine/searcher.js";
 import { Bundle } from "jito-ts/dist/sdk/block-engine/types.js";
 
+const MOCK_JITO = process.env.MOCK_JITO === "true";
+
 const JITO_BLOCK_ENGINE_URL = process.env.JITO_BLOCK_ENGINE_URL;
-if (!JITO_BLOCK_ENGINE_URL) {
+if (!MOCK_JITO && !JITO_BLOCK_ENGINE_URL) {
   throw new Error("JITO_BLOCK_ENGINE_URL is not set");
 }
 
@@ -40,6 +43,12 @@ const pendingByBundleId = new Map<string, (status: BundleStatus) => void>();
 export async function submitBundle(
   transactions: readonly Base64EncodedWireTransaction[],
 ): Promise<string> {
+  if (MOCK_JITO) {
+    const bundleId = randomUUID();
+    console.log("[jito-mock] submitBundle →", bundleId, `(${transactions.length} txs)`);
+    return bundleId;
+  }
+
   const txs = transactions.map((b64) =>
     VersionedTransaction.deserialize(Buffer.from(b64, "base64")),
   );
@@ -61,6 +70,11 @@ export async function submitBundle(
  *   'timeout' — no terminal result within 30s
  */
 export async function pollBundleStatus(bundleId: string): Promise<BundleStatus> {
+  if (MOCK_JITO) {
+    console.log("[jito-mock] pollBundleStatus →", bundleId, "→ landed");
+    return "landed";
+  }
+
   getClient();
   return new Promise<BundleStatus>((resolve) => {
     const timeout = setTimeout(() => {
