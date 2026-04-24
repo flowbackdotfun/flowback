@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { BrandMark, Icon } from "./icons";
 import type { FlowTheme } from "./types";
 
@@ -12,6 +12,10 @@ type NavProps = {
 export function Nav({ onToggleTheme, theme }: NavProps) {
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const blurredSurfaceStyle: CSSProperties = {
+    backdropFilter: "blur(14px) saturate(140%)",
+    WebkitBackdropFilter: "blur(14px) saturate(140%)",
+  };
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -31,7 +35,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
   const close = () => setMenuOpen(false);
 
   return (
-    <nav className="nav" data-scrolled={scrolled}>
+    <nav className="nav" data-scrolled={scrolled} style={blurredSurfaceStyle}>
       <div className="nav-inner">
         <a href="#" className="brand">
           <span className="brand-mark">
@@ -74,7 +78,11 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
             <span />
           </button>
         </div>
-        <div className="nav-drawer" data-open={menuOpen}>
+        <div
+          className="nav-drawer"
+          data-open={menuOpen}
+          style={blurredSurfaceStyle}
+        >
           <a href="#how" onClick={close}>
             How it works
           </a>
