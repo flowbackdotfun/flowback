@@ -118,8 +118,8 @@ export function Hero() {
               <p className="sub">
                 FlowBack runs a 200 ms sealed-bid auction before every swap
                 lands on Solana. Searchers compete to backrun you;{" "}
-                <b>90% of the winning bid is rebated as SOL</b>
-                in the same block — same Jupiter-routed output, plus cashback.
+                <b>90% of the winning bid is rebated as SOL </b>
+                in the same block and same Jupiter routed output, plus cashback.
               </p>
               <div className="hero-ctas">
                 <button

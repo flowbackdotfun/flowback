@@ -19,7 +19,6 @@ export function Footer() {
             </span>
           </div>
           <div className="footer-links">
-            <a href="#">Docs</a>
             <a href="https://github.com/flowbackdotfun/flowback">GitHub</a>
             <a href="https://x.com/flowbackdotfun" target="_blank">
               X / Twitter

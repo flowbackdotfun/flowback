@@ -48,7 +48,6 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           <a href="#searchers">Searchers</a>
           <a href="#compare">Compare</a>
           <a href="#faq">FAQ</a>
-          <a href="#">Docs</a>
         </div>
         <div className="nav-right">
           <button
@@ -95,10 +94,11 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           <a href="#faq" onClick={close}>
             FAQ
           </a>
-          <a href="#" onClick={close}>
-            Docs
-          </a>
-          <a className="btn btn-primary btn-sm" aria-disabled="true" href="#">
+          <a
+            className="btn btn-primary btn-sm launch-full text-black!"
+            aria-disabled="true"
+            href="#"
+          >
             Launch App <span className="soon-tag">soon</span>
           </a>
         </div>

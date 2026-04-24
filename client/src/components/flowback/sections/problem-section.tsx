@@ -86,11 +86,12 @@ export function ProblemSection() {
             The problem
           </span>
           <h2>
-            Every day, Solana traders lose money to bots they can&apos;t see.
+            Every day, money is siphoned from Solana traders by bots they
+            can&apos;t see.
           </h2>
           <p>
             MEV isn&apos;t an abstraction. It&apos;s the difference between the
-            quote you saw and the price you got — skimmed by searchers, routed
+            quote you saw and the price you got, skimmed by searchers, routed
             through private lanes, and paid back to no one.
           </p>
         </div>
