@@ -17,6 +17,7 @@
   "dependencies": {
     "@solana/kit": "^6.8.0",
     "@solana/web3.js": "^1.98.4",
+    "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^0.45.2",
     "express": "^5.2.1",
@@ -25,6 +26,7 @@
     "uWebSockets.js": "github:uNetworking/uWebSockets.js#v20.51.0"
   },
   "devDependencies": {
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/node": "^25.6.0",
     "drizzle-kit": "^0.31.10",

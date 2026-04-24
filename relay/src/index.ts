@@ -18,9 +18,11 @@ import { createWaitlistRoutes } from "./routes/waitlist.route.js";
 import { PreparedSwapStore } from "./services/prepare-store.js";
 import { attachSearcherWs, SearcherWsRegistry } from "./ws/searcher.js";
 import { attachUserStatusWs, UserStatusEmitter } from "./ws/user.js";
+import cors from "cors";
 
 const REST_PORT = Number(process.env.REST_PORT ?? process.env.PORT ?? 3001);
 const WS_PORT = Number(process.env.WS_PORT ?? 3002);
+const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "http://localhost:3000";
 
 const SOLANA_RPC_URL = requireEnv("SOLANA_RPC_URL");
 const FLOWBACK_PROGRAM_ID = requireEnv("FLOWBACK_PROGRAM_ID");
@@ -40,6 +42,7 @@ async function main(): Promise<void> {
   const preparedSwaps = new PreparedSwapStore();
 
   const httpApp = express();
+  httpApp.use(cors({ origin: ALLOWED_ORIGIN, credentials: true }));
   httpApp.use(express.json({ limit: "256kb" }));
   httpApp.get("/health", (_req, res) => {
     res.json({
