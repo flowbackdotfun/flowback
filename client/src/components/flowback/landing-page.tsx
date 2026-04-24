@@ -20,18 +20,28 @@ export function LandingPage() {
   const skipFirstThemeApply = useRef(true);
 
   useEffect(() => {
-    const attr = document.documentElement.getAttribute("data-theme");
-    if (attr === "light" || attr === "dark") {
-      setTheme(attr);
-    }
     document.documentElement.style.setProperty("--grain-opacity", "0");
 
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const syncTheme = () => {
+      const attr = document.documentElement.getAttribute("data-theme");
+      setTheme(
+        attr === "light" || attr === "dark"
+          ? attr
+          : mq.matches
+            ? "dark"
+            : "light",
+      );
+    };
+    const syncFrame = window.requestAnimationFrame(syncTheme);
     const onSystemThemeChange = () => {
       setTheme(mq.matches ? "dark" : "light");
     };
     mq.addEventListener("change", onSystemThemeChange);
-    return () => mq.removeEventListener("change", onSystemThemeChange);
+    return () => {
+      window.cancelAnimationFrame(syncFrame);
+      mq.removeEventListener("change", onSystemThemeChange);
+    };
   }, []);
 
   useEffect(() => {

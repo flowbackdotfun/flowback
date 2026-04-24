@@ -820,8 +820,109 @@ section {
 .cell-dot {
   width: 8px;
   height: 8px;
+  flex: 0 0 auto;
   border-radius: 50%;
   background: currentColor;
+}
+
+@media (max-width: 760px) {
+  .table-wrap {
+    border: none;
+    border-radius: 0;
+    overflow: visible;
+    background: transparent;
+  }
+  .ctable,
+  .ctable tbody,
+  .ctable tr,
+  .ctable th,
+  .ctable td {
+    display: block;
+    width: 100%;
+  }
+  .ctable {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+  }
+  .ctable thead {
+    display: none;
+  }
+  .ctable tbody {
+    display: grid;
+    gap: 12px;
+  }
+  .ctable tbody tr {
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    background: var(--bg-elev);
+  }
+  .ctable th,
+  .ctable td {
+    border-bottom: 1px solid var(--line);
+    padding: 0;
+  }
+  .ctable tbody th {
+    width: 100%;
+    padding: 16px 16px 14px;
+    background: var(--bg-elev-2);
+    font-size: 14px;
+    line-height: 1.35;
+  }
+  .ctable tbody td {
+    min-height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 13px 16px;
+  }
+  .ctable tbody td::before {
+    content: attr(data-label);
+    min-width: 0;
+    color: var(--fg-dim);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+  .ctable td.highlight {
+    background: var(--accent-soft);
+  }
+  .ctable tr:last-child td,
+  .ctable tr:last-child th {
+    border-bottom: 1px solid var(--line);
+  }
+  .ctable tbody tr:last-child td:last-child,
+  .ctable tbody tr td:last-child {
+    border-bottom: none;
+  }
+  .cell-good,
+  .cell-bad,
+  .cell-meh {
+    justify-content: flex-end;
+    text-align: right;
+    min-width: 0;
+  }
+  .ctable td .mono {
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (max-width: 420px) {
+  .container {
+    padding-inline: 18px;
+  }
+  .ctable tbody th {
+    padding-inline: 14px;
+  }
+  .ctable tbody td {
+    gap: 12px;
+    padding-inline: 14px;
+  }
 }
 
 /* Built on */

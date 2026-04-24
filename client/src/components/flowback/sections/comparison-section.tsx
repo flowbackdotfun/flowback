@@ -49,9 +49,9 @@ const rows: { label: string; flow: Cell; jup: Cell; sandwich: Cell }[] = [
   },
 ];
 
-function CellTd({ c, hi }: { c: Cell; hi: boolean }) {
+function CellTd({ c, hi, label }: { c: Cell; hi: boolean; label: string }) {
   return (
-    <td className={hi ? "highlight" : ""}>
+    <td className={hi ? "highlight" : ""} data-label={label}>
       <span className={"cell-" + c.kind}>
         <span className="cell-dot" />
         <span className="mono">{c.v}</span>
@@ -87,9 +87,9 @@ export function ComparisonSection() {
               {rows.map((r, i) => (
                 <tr key={i}>
                   <th>{r.label}</th>
-                  <CellTd c={r.flow} hi />
-                  <CellTd c={r.jup} hi={false} />
-                  <CellTd c={r.sandwich} hi={false} />
+                  <CellTd c={r.flow} hi label={cols[0].label} />
+                  <CellTd c={r.jup} hi={false} label={cols[1].label} />
+                  <CellTd c={r.sandwich} hi={false} label={cols[2].label} />
                 </tr>
               ))}
             </tbody>
