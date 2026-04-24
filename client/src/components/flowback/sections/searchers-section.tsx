@@ -49,19 +49,13 @@ export function SearchersSection() {
                 <span className="k">honest pricing by construction</span>
               </li>
               <li>
-                Low-latency bid API over QUIC
-                <span className="k">
-                  &lt; 5ms to relay from TYO / FRA / NYC
-                </span>
-              </li>
-              <li>
                 Post-trade proofs for every fill
                 <span className="k">auditable by bidders and users</span>
               </li>
             </ul>
             <div style={{ marginTop: 32, display: "flex", gap: 12 }}>
-              <a className="btn btn-ghost btn-sm" href="#">
-                Read searcher docs <Icon.Arrow />
+              <a className="btn btn-ghost btn-sm" aria-disabled="true" href="#">
+                Read searcher docs <span className="soon-tag">soon</span>
               </a>
             </div>
           </div>

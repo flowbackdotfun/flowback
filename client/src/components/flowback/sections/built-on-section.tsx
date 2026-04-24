@@ -1,6 +1,13 @@
 "use client";
 
-const logos = ["Solana", "Jupiter", "Jito", "Anchor"];
+import Image from "next/image";
+
+const logos = [
+  { name: "Solana", src: "/logos/solana.svg" },
+  { name: "Jupiter", src: "/logos/Jupiter.png" },
+  { name: "Jito", src: "/logos/Jito-dark.png", className: "logo-img logo-jito" },
+  { name: "Anchor", src: "/logos/Anchor.png" },
+] as const;
 
 export function BuiltOnSection() {
   return (
@@ -15,24 +22,17 @@ export function BuiltOnSection() {
         </div>
         <div className="built-on">
           {logos.map((l) => (
-            <div className="logo-tile" key={l}>
-              <div className="ph" />
-              <div className="name">{l}</div>
+            <div className="logo-tile" key={l.name}>
+              <Image
+                src={l.src}
+                alt={l.name}
+                width={200}
+                height={80}
+                className={"className" in l ? l.className : "logo-img"}
+              />
             </div>
           ))}
         </div>
-        <p
-          style={{
-            marginTop: 20,
-            color: "var(--fg-dim)",
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            letterSpacing: "0.04em",
-          }}
-        >
-          Placeholder wordmarks. Production build swaps in real brand marks with
-          permission.
-        </p>
       </div>
     </section>
   );

@@ -109,7 +109,7 @@ export function Hero() {
             >
               <span className="eyebrow">
                 <span className="dot" />
-                v0.3 · Solana devnet
+                MEV redistribution on Solana
               </span>
               <h1>
                 MEV belongs to <span className="accent">the trader</span>, not
@@ -129,9 +129,6 @@ export function Hero() {
                 >
                   Join Waitlist <Icon.Arrow />
                 </button>
-                <a className="btn btn-ghost" href="#">
-                  Read the docs
-                </a>
               </div>
               <div className="hero-meta">
                 <div>
@@ -196,10 +193,7 @@ export function Hero() {
               </Button>
             </div>
           ) : (
-            <form
-              className="space-y-5"
-              onSubmit={handleSubmit}
-            >
+            <form className="space-y-5" onSubmit={handleSubmit}>
               <div className="space-y-2">
                 <Label
                   className="text-[0.95rem] font-medium tracking-[-0.01em]"

@@ -300,7 +300,7 @@ function DiagramA({
       </svg>
 
       <div className="ftr">
-        <span>lamports returned (session)</span>
+        <span>lamports returned</span>
         <span
           style={{ color: "var(--accent)", fontVariantNumeric: "tabular-nums" }}
         >

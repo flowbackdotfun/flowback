@@ -291,6 +291,11 @@ p {
   border-radius: 4px;
   color: color-mix(in oklch, var(--accent-ink) 80%, var(--fg));
 }
+.btn-ghost .soon-tag {
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: 4px;
+}
 
 /* Sections */
 section {
@@ -937,48 +942,33 @@ section {
   }
 }
 .logo-tile {
-  aspect-ratio: 3 / 1.3;
+  aspect-ratio: 2 / 1;
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 24px;
   transition:
     border-color 0.2s ease,
     background-color 0.2s ease;
-  position: relative;
   overflow: hidden;
 }
 .logo-tile:hover {
   border-color: var(--line-strong);
   background: var(--bg-elev-2);
 }
-.logo-tile .name {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--fg-muted);
+.logo-tile .logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
-.logo-tile .ph {
-  position: absolute;
-  inset: 0;
-  background-image: repeating-linear-gradient(
-    -45deg,
-    transparent 0,
-    transparent 6px,
-    var(--line) 6px,
-    var(--line) 7px
-  );
-  opacity: 0.5;
-}
-.logo-tile .name {
-  position: relative;
-  z-index: 1;
-  padding: 6px 10px;
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: 4px;
+
+/* Jito icon is white-on-transparent; invert to black for light mode */
+:root[data-theme="light"] .logo-jito { filter: invert(1); }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .logo-jito { filter: invert(1); }
 }
 
 /* FAQ */

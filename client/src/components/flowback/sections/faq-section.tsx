@@ -1,16 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { Icon } from "../icons";
 
 const items = [
   {
     q: "Is FlowBack safe to use?",
-    a: "Yes. You sign the exact same Jupiter-routed transaction you would sign going direct. FlowBack never custodies your funds. The rebate program is an on-chain Anchor program — audited, verifiable, immutable once deployed. If our relayer goes down, your wallet falls back to a normal Jupiter submission.",
+    a: "Yes. You sign the exact same Jupiter-routed transaction you would sign going direct. FlowBack never custodies your funds. The rebate program is an on-chain Anchor program — audited, verifiable. If our relayer goes down, your wallet falls back to a normal Jupiter submission.",
   },
   {
     q: "What if no searcher bids on my swap?",
-    a: "Your swap lands exactly as it would have on Jupiter, with jitodontfront still included for sandwich protection. No bid means no rebate, but no penalty either — you never pay anything for using FlowBack.",
+    a: "Your swap lands exactly as it would have on Jupiter. No bid means no rebate, but no penalty either — you never pay anything for using FlowBack.",
   },
   {
     q: "Can the auction fail and cost me execution?",
@@ -19,10 +18,6 @@ const items = [
   {
     q: "Is my swap output ever worse than going to Jupiter directly?",
     a: "No. We use Jupiter v6 routing unchanged. The cashback is pure upside on top of the same execution quality you\u2019d get from the Jupiter frontend. Same input, same output, plus a rebate.",
-  },
-  {
-    q: "When does mainnet launch?",
-    a: "Devnet is live for whitelisted searchers. Mainnet beta targets Q3 2026 with a capped TVL and transparent kill-switch. We'll open the waitlist once the audits are public.",
   },
   {
     q: "Do I need to approve a new program or stake anything?",
@@ -36,22 +31,11 @@ export function FAQSection() {
   return (
     <section className="section" id="faq">
       <div className="container faq-grid">
-        <div className="section-head" style={{ marginBottom: 0 }}>
+        <div className="section-head">
           <span className="eyebrow">
             <span className="dot" />
-            FAQ
+            FAQs
           </span>
-          <h2 style={{ marginTop: 18 }}>Answers.</h2>
-          <p>
-            For anything more technical, the docs go deeper — including the
-            auction mechanism, the rebate program source, and the Jito bundle
-            format.
-          </p>
-          <div style={{ marginTop: 24 }}>
-            <a className="btn btn-ghost btn-sm" href="#">
-              Read the docs <Icon.Arrow />
-            </a>
-          </div>
         </div>
         <div className="faq-list">
           {items.map((item, i) => (
