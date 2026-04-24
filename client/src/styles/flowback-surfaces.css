@@ -308,7 +308,6 @@ section {
 }
 .section-head {
   max-width: 720px;
-  margin-bottom: 56px;
 }
 .section-head .eyebrow {
   margin-bottom: 18px;
@@ -966,22 +965,20 @@ section {
 }
 
 /* Jito icon is white-on-transparent; invert to black for light mode */
-:root[data-theme="light"] .logo-jito { filter: invert(1); }
+:root[data-theme="light"] .logo-jito {
+  filter: invert(1);
+}
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .logo-jito { filter: invert(1); }
+  :root:not([data-theme="dark"]) .logo-jito {
+    filter: invert(1);
+  }
 }
 
 /* FAQ */
 .faq-grid {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 64px;
-}
-@media (max-width: 900px) {
-  .faq-grid {
-    grid-template-columns: 1fr;
-    gap: 32px;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
 }
 .faq-list {
   border-top: 1px solid var(--line);
