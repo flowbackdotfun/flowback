@@ -35,7 +35,15 @@ export function Hero() {
   const [email, setEmail] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<WaitlistResponse | null>(null);
+  const [result, setResult] = useState<WaitlistResponse | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const stored = localStorage.getItem("flowback_waitlist");
+      return stored ? (JSON.parse(stored) as WaitlistResponse) : null;
+    } catch {
+      return null;
+    }
+  });
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -72,7 +80,12 @@ export function Hero() {
         throw new Error(reason || "Could not join the waitlist.");
       }
 
-      setResult(payload as WaitlistResponse);
+      const data = payload as WaitlistResponse;
+      localStorage.setItem(
+        "flowback_waitlist",
+        JSON.stringify({ email: data.email, alreadyJoined: data.alreadyJoined }),
+      );
+      setResult(data);
       setName("");
       setEmail("");
     } catch (err) {
@@ -86,10 +99,7 @@ export function Hero() {
 
   function handleDialogChange(open: boolean) {
     setIsDialogOpen(open);
-    if (!open) {
-      setError(null);
-      setResult(null);
-    }
+    if (!open) setError(null);
   }
 
   return (
