@@ -19,6 +19,13 @@ const BALANCES_DISCONNECTED: Record<TokenSymbol, string> = {
 };
 
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1];
+const JUPITER_SLIPPAGE_MIN = 0.1;
+const JUPITER_SLIPPAGE_MAX = 50;
+const TOKEN_LOGO_URLS: Record<TokenSymbol, string> = {
+  SOL: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
+  USDC:
+    "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/assets/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
+};
 
 function sanitizeAmount(value: string) {
   const stripped = value.replace(/[^0-9.]/g, "");
@@ -26,7 +33,29 @@ function sanitizeAmount(value: string) {
   return rest.length > 0 ? `${whole}.${rest.join("")}` : whole;
 }
 
+function clampSlippage(value: number) {
+  return Math.min(JUPITER_SLIPPAGE_MAX, Math.max(JUPITER_SLIPPAGE_MIN, value));
+}
+
 function TokenLogo({ token }: { token: TokenSymbol }) {
+  const [imageFailed, setImageFailed] = useState(false);
+
+  if (!imageFailed) {
+    return (
+      <span className={`token-logo ${token.toLowerCase()}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          alt=""
+          className="token-logo-img"
+          height={24}
+          onError={() => setImageFailed(true)}
+          src={TOKEN_LOGO_URLS[token]}
+          width={24}
+        />
+      </span>
+    );
+  }
+
   return (
     <span className={`token-logo ${token.toLowerCase()}`}>
       {token === "SOL" ? "S" : "$"}
@@ -133,10 +162,7 @@ export function RouteDetails({
     if (!open) return;
 
     const onPointerDown = (event: MouseEvent) => {
-      if (
-        slipRef.current &&
-        !slipRef.current.contains(event.target as Node)
-      ) {
+      if (slipRef.current && !slipRef.current.contains(event.target as Node)) {
         setOpen(false);
       }
     };
@@ -185,7 +211,11 @@ export function RouteDetails({
           </button>
 
           {open ? (
-            <div aria-label="Max slippage" className="slippage-popover" role="dialog">
+            <div
+              aria-label="Max slippage"
+              className="slippage-popover"
+              role="dialog"
+            >
               <div className="label">Max slippage</div>
               <div className="slippage-presets">
                 {SLIPPAGE_PRESETS.map((preset) => (
@@ -193,7 +223,7 @@ export function RouteDetails({
                     className="slip-btn"
                     data-active={slippage === preset}
                     key={preset}
-                    onClick={() => setSlippage(preset)}
+                    onClick={() => setSlippage(clampSlippage(preset))}
                     type="button"
                   >
                     {preset}%
@@ -204,8 +234,11 @@ export function RouteDetails({
                   className="slip-custom"
                   inputMode="decimal"
                   onChange={(event) => {
-                    const next = Number.parseFloat(sanitizeAmount(event.target.value));
-                    setSlippage(Number.isFinite(next) ? next : 0);
+                    const next = Number.parseFloat(
+                      sanitizeAmount(event.target.value),
+                    );
+                    if (!Number.isFinite(next)) return;
+                    setSlippage(clampSlippage(next));
                   }}
                   placeholder="custom"
                   type="text"
@@ -215,8 +248,10 @@ export function RouteDetails({
                 />
               </div>
               <div className="slippage-note">
-                Your transaction reverts if price moves beyond this. FlowBack&apos;s
-                sealed-bid auction runs independently.
+                Your transaction reverts if price moves beyond this.
+                Allowed range: {JUPITER_SLIPPAGE_MIN}% to{" "}
+                {JUPITER_SLIPPAGE_MAX}%. FlowBack&apos;s sealed-bid auction runs
+                independently.
               </div>
             </div>
           ) : null}
@@ -243,13 +278,16 @@ export function SwapCard({
   const [swapping, setSwapping] = useState(false);
   const [flipping, setFlipping] = useState(false);
   const signatureNonce = useRef(0);
+  const flipTimerRef = useRef<number | null>(null);
 
   const inToken: TokenSymbol = direction === "buy" ? "USDC" : "SOL";
   const outToken: TokenSymbol = direction === "buy" ? "SOL" : "USDC";
   const rate = direction === "buy" ? 0.00671 : 149.04;
   const amount = Number.parseFloat(amountIn) || 0;
   const hasAmount = amount > 0;
-  const quote = hasAmount ? (amount * rate).toFixed(direction === "buy" ? 6 : 4) : "";
+  const quote = hasAmount
+    ? (amount * rate).toFixed(direction === "buy" ? 6 : 4)
+    : "";
   const cashback = hasAmount
     ? Math.round(amount * (direction === "buy" ? 180 : 26800))
     : 0;
@@ -264,13 +302,26 @@ export function SwapCard({
   function flipTokens() {
     if (flipping) return;
 
+    const nextAmountIn = quote;
     setFlipping(true);
-    window.setTimeout(() => {
+    if (flipTimerRef.current) {
+      window.clearTimeout(flipTimerRef.current);
+    }
+    flipTimerRef.current = window.setTimeout(() => {
       setDirection((current) => (current === "buy" ? "sell" : "buy"));
-      setAmountIn("");
-    }, 280);
-    window.setTimeout(() => setFlipping(false), 420);
+      setAmountIn(nextAmountIn);
+      setFlipping(false);
+      flipTimerRef.current = null;
+    }, 260);
   }
+
+  useEffect(() => {
+    return () => {
+      if (flipTimerRef.current) {
+        window.clearTimeout(flipTimerRef.current);
+      }
+    };
+  }, []);
 
   async function handleAction() {
     if (!connected) {
@@ -313,7 +364,9 @@ export function SwapCard({
                   className="token-amount"
                   id="flowback-pay-amount"
                   inputMode="decimal"
-                  onChange={(event) => setAmountIn(sanitizeAmount(event.target.value))}
+                  onChange={(event) =>
+                    setAmountIn(sanitizeAmount(event.target.value))
+                  }
                   placeholder="0.00"
                   spellCheck={false}
                   type="text"
@@ -333,7 +386,9 @@ export function SwapCard({
                     Max
                   </button>
                 ) : (
-                  <span>{hasAmount ? `1 ${inToken} ≈ ${rate} ${outToken}` : ""}</span>
+                  <span>
+                    {hasAmount ? `1 ${inToken} ≈ ${rate} ${outToken}` : ""}
+                  </span>
                 )}
               </div>
             </div>
@@ -380,16 +435,15 @@ export function SwapCard({
               </div>
               <div className="foot">
                 <span>Balance: {balances[outToken]}</span>
-                <span>{hasAmount ? `1 ${inToken} ≈ ${rate} ${outToken}` : ""}</span>
+                <span>
+                  {hasAmount ? `1 ${inToken} ≈ ${rate} ${outToken}` : ""}
+                </span>
               </div>
             </div>
           </div>
 
           <div className="cashback-line">
             <div className="left">
-              <span className="mark">
-                <Icon.Cashback aria-hidden="true" />
-              </span>
               <span>FlowBack cashback</span>
             </div>
             <div className={`value${hasAmount ? "" : " empty"}`}>

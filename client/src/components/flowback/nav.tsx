@@ -62,27 +62,21 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
   return (
     <nav className="nav" data-scrolled={scrolled} style={blurredSurfaceStyle}>
       <div className="nav-inner">
-        <a href="#" className="brand">
+        <Link href="/" className="brand" onClick={close}>
           <span className="brand-mark">
             <BrandMark />
           </span>
           <span>FlowBack</span>
-        </a>
+        </Link>
         <div className="nav-links">
-          {onSwapPage ? (
-            <>
-              <Link href="/swap">Swap</Link>
-              <Link href="/#how">How it works</Link>
-              <a href="#">Docs</a>
-            </>
-          ) : (
+          {!onSwapPage ? (
             <>
               <a href="#how">How it works</a>
               <a href="#searchers">Searchers</a>
               <a href="#compare">Compare</a>
               <a href="#faq">FAQ</a>
             </>
-          )}
+          ) : null}
         </div>
         <div className="nav-right">
           <button
@@ -137,19 +131,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           data-open={menuOpen}
           style={blurredSurfaceStyle}
         >
-          {onSwapPage ? (
-            <>
-              <Link href="/swap" onClick={close}>
-                Swap
-              </Link>
-              <Link href="/#how" onClick={close}>
-                How it works
-              </Link>
-              <a href="#" onClick={close}>
-                Docs
-              </a>
-            </>
-          ) : (
+          {!onSwapPage ? (
             <>
               <a href="#how" onClick={close}>
                 How it works
@@ -164,7 +146,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
                 FAQ
               </a>
             </>
-          )}
+          ) : null}
           {onSwapPage ? (
             <button
               type="button"

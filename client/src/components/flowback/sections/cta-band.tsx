@@ -1,5 +1,7 @@
 "use client";
 
+import Link from "next/link";
+
 export function CTABand() {
   return (
     <section className="section" id="cta">
@@ -9,9 +11,9 @@ export function CTABand() {
             <h2>Start earning back what&apos;s yours.</h2>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <a className="btn btn-primary" aria-disabled="true" href="#">
-              Launch App <span className="soon-tag">soon</span>
-            </a>
+            <Link className="btn btn-primary" href="/swap">
+              Launch App
+            </Link>
           </div>
         </div>
       </div>

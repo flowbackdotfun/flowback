@@ -82,7 +82,8 @@
     transform 0.42s cubic-bezier(0.5, 0, 0.2, 1);
 }
 .token-row:focus-within {
-  border-color: var(--line-strong);
+  border-color: color-mix(in oklch, var(--accent) 45%, var(--line));
+  box-shadow: 0 0 0 0.25px color-mix(in oklch, var(--accent) 35%, transparent);
 }
 .token-row .label {
   display: flex;
@@ -120,12 +121,19 @@
   height: 24px;
   flex-shrink: 0;
   place-items: center;
+  overflow: hidden;
   border-radius: 50%;
   color: #000;
   font-family: var(--font-mono);
   font-size: 9px;
   font-weight: 500;
   letter-spacing: 0.02em;
+}
+.token-logo-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 .token-logo.sol {
   background: oklch(0.72 0.18 300);
@@ -215,12 +223,10 @@
   transform: rotate(180deg);
 }
 .swap-rows[data-flipping="true"] .token-row:first-of-type {
-  opacity: 0.5;
-  transform: translateY(calc(100% + 4px));
+  animation: rowPushDown 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .swap-rows[data-flipping="true"] .token-row:last-of-type {
-  opacity: 0.5;
-  transform: translateY(calc(-100% - 4px));
+  animation: rowPushUp 0.26s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 .cashback-line {
   display: flex;
@@ -272,6 +278,12 @@
   justify-content: center;
   margin-top: 14px;
   font-size: 15px;
+}
+.swap-action:hover:not(:disabled) {
+  background: color-mix(in oklch, var(--accent) 84%, black 16%);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--accent) 80%, black 20%),
+    0 14px 36px -10px color-mix(in oklch, var(--accent-glow) 88%, black 12%);
 }
 .swap-action:disabled {
   opacity: 0.75;
@@ -371,9 +383,11 @@
   text-transform: uppercase;
 }
 .slippage-presets {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, auto)) minmax(0, 1fr);
   align-items: center;
   gap: 8px;
+  width: 100%;
 }
 .slip-btn {
   appearance: none;
@@ -402,8 +416,8 @@
 }
 .slip-custom {
   min-width: 0;
-  flex: 1;
-  border: 1px solid var(--line);
+  width: 100%;
+  border: none;
   border-radius: 8px;
   outline: none;
   background: var(--bg-elev);
@@ -414,7 +428,7 @@
   text-align: right;
 }
 .slip-custom:focus {
-  border-color: var(--accent);
+  border: none;
 }
 .slippage-note {
   color: var(--fg-dim);
@@ -508,7 +522,6 @@
 .swap-card button:focus-visible,
 .swap-meta button:focus-visible,
 .wallet-modal button:focus-visible,
-.token-amount:focus-visible,
 .slip-custom:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -521,6 +534,26 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+@keyframes rowPushDown {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0.5;
+    transform: translateY(calc(100% + 4px));
+  }
+}
+@keyframes rowPushUp {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0.5;
+    transform: translateY(calc(-100% - 4px));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -545,5 +578,11 @@
   .slippage-popover {
     right: -20px;
     width: min(280px, calc(100vw - 48px));
+  }
+  .slippage-presets {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .slip-custom {
+    grid-column: 1 / -1;
   }
 }
