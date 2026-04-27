@@ -1,19 +1,7 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
 import Script from "next/script";
+import { SolanaWalletProvider } from "@/providers/wallet-provider";
 import "./globals.css";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-  weight: ["400", "500"],
-});
 
 export const metadata: Metadata = {
   title: "FlowBack — MEV as cashback, on Solana",
@@ -29,14 +17,15 @@ export default function RootLayout({
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       suppressHydrationWarning
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className="h-full antialiased"
     >
-      <body className="min-h-full">
+      <body className="min-h-full" suppressHydrationWarning>
         <Script id="flowback-theme" strategy="beforeInteractive">
           {`(function(){try{var m=window.matchMedia("(prefers-color-scheme: dark)");document.documentElement.setAttribute("data-theme",m.matches?"dark":"light");}catch(e){}})();`}
         </Script>
-        {children}
+        <SolanaWalletProvider>{children}</SolanaWalletProvider>
       </body>
     </html>
   );

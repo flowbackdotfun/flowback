@@ -1,6 +1,9 @@
 "use client";
 
 import { useEffect, useState, type CSSProperties } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useWallet } from "@solana/wallet-adapter-react";
 import { BrandMark, Icon } from "./icons";
 import type { FlowTheme } from "./types";
 
@@ -10,6 +13,8 @@ type NavProps = {
 };
 
 export function Nav({ onToggleTheme, theme }: NavProps) {
+  const pathname = usePathname();
+  const { connected, publicKey, disconnect, wallets, select } = useWallet();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const blurredSurfaceStyle: CSSProperties = {
@@ -33,6 +38,26 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
   }, []);
 
   const close = () => setMenuOpen(false);
+  const onSwapPage = pathname === "/swap";
+  const shortWallet = publicKey
+    ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`
+    : "";
+
+  const connectWallet = () => {
+    const preferred =
+      wallets.find(
+        (w) => w.readyState === "Installed" || w.readyState === "Loadable",
+      ) ?? wallets[0];
+    if (preferred) select(preferred.adapter.name);
+  };
+
+  const handleSwapCta = () => {
+    if (connected) {
+      disconnect();
+      return;
+    }
+    connectWallet();
+  };
 
   return (
     <nav className="nav" data-scrolled={scrolled} style={blurredSurfaceStyle}>
@@ -44,10 +69,20 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           <span>FlowBack</span>
         </a>
         <div className="nav-links">
-          <a href="#how">How it works</a>
-          <a href="#searchers">Searchers</a>
-          <a href="#compare">Compare</a>
-          <a href="#faq">FAQ</a>
+          {onSwapPage ? (
+            <>
+              <Link href="/swap">Swap</Link>
+              <Link href="/#how">How it works</Link>
+              <a href="#">Docs</a>
+            </>
+          ) : (
+            <>
+              <a href="#how">How it works</a>
+              <a href="#searchers">Searchers</a>
+              <a href="#compare">Compare</a>
+              <a href="#faq">FAQ</a>
+            </>
+          )}
         </div>
         <div className="nav-right">
           <button
@@ -58,13 +93,33 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           >
             {theme === "dark" ? <Icon.Sun /> : <Icon.Moon />}
           </button>
-          <a
-            className="btn btn-primary btn-sm launch-full"
-            aria-disabled="true"
-            href="#"
-          >
-            Launch App <span className="soon-tag">soon</span>
-          </a>
+          {onSwapPage ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm launch-full"
+              onClick={handleSwapCta}
+              title={connected ? "Disconnect wallet" : "Connect wallet"}
+            >
+              {connected ? (
+                <>
+                  <span
+                    className="size-2 rounded-full bg-(--accent)"
+                    style={{ boxShadow: "0 0 10px var(--accent-glow)" }}
+                  />
+                  {shortWallet}
+                </>
+              ) : (
+                "Connect Wallet"
+              )}
+            </button>
+          ) : (
+            <Link
+              href="/swap"
+              className="btn btn-primary btn-sm launch-full"
+            >
+              Launch App <Icon.Arrow />
+            </Link>
+          )}
           <button
             type="button"
             className="nav-burger"
@@ -82,25 +137,65 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           data-open={menuOpen}
           style={blurredSurfaceStyle}
         >
-          <a href="#how" onClick={close}>
-            How it works
-          </a>
-          <a href="#searchers" onClick={close}>
-            Searchers
-          </a>
-          <a href="#compare" onClick={close}>
-            Compare
-          </a>
-          <a href="#faq" onClick={close}>
-            FAQ
-          </a>
-          <a
-            className="btn btn-primary btn-sm launch-full text-black!"
-            aria-disabled="true"
-            href="#"
-          >
-            Launch App <span className="soon-tag">soon</span>
-          </a>
+          {onSwapPage ? (
+            <>
+              <Link href="/swap" onClick={close}>
+                Swap
+              </Link>
+              <Link href="/#how" onClick={close}>
+                How it works
+              </Link>
+              <a href="#" onClick={close}>
+                Docs
+              </a>
+            </>
+          ) : (
+            <>
+              <a href="#how" onClick={close}>
+                How it works
+              </a>
+              <a href="#searchers" onClick={close}>
+                Searchers
+              </a>
+              <a href="#compare" onClick={close}>
+                Compare
+              </a>
+              <a href="#faq" onClick={close}>
+                FAQ
+              </a>
+            </>
+          )}
+          {onSwapPage ? (
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm launch-full"
+              onClick={() => {
+                close();
+                handleSwapCta();
+              }}
+              title={connected ? "Disconnect wallet" : "Connect wallet"}
+            >
+              {connected ? (
+                <>
+                  <span
+                    className="size-2 rounded-full bg-(--accent)"
+                    style={{ boxShadow: "0 0 10px var(--accent-glow)" }}
+                  />
+                  {shortWallet}
+                </>
+              ) : (
+                "Connect Wallet"
+              )}
+            </button>
+          ) : (
+            <Link
+              href="/swap"
+              className="btn btn-primary btn-sm launch-full"
+              onClick={close}
+            >
+              Launch App <Icon.Arrow />
+            </Link>
+          )}
         </div>
       </div>
     </nav>

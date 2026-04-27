@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Icon } from "../icons";
 
 const bids: [string, string][] = [
   ["9kF8…ePQ2", "0.0018"],
