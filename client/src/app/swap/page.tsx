@@ -6,7 +6,7 @@ import { SwapCard } from "@/components/flowback/swap-card";
 import { CashbackToast } from "@/components/flowback/cashback-toast";
 import type { FlowTheme } from "@/components/flowback/types";
 
-type Toast = { lamports: number; sig: string; id: number };
+type Toast = { lamports: string; sig: string; id: number };
 
 export default function SwapPage() {
   const [theme, setTheme] = useState<FlowTheme>("dark");
@@ -49,7 +49,7 @@ export default function SwapPage() {
         <div className="hero-bg" />
         <div className="hero-grid" />
         <SwapCard
-          onCashback={(lamports, sig) =>
+          onCashback={(lamports: string, sig: string) =>
             setToasts((p) => [...p, { lamports, sig, id: Date.now() }])
           }
         />

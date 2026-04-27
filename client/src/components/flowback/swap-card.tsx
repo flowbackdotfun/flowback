@@ -1,37 +1,80 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { useWallet } from "@solana/wallet-adapter-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+} from "react";
+import { useConnection, useWallet } from "@solana/wallet-adapter-react";
+import { PublicKey } from "@solana/web3.js";
 import { X } from "lucide-react";
-import { Icon } from "./icons";
-
-type SwapDirection = "buy" | "sell";
-type TokenSymbol = "SOL" | "USDC";
-
-const BALANCES_CONNECTED: Record<TokenSymbol, string> = {
-  SOL: "12.480",
-  USDC: "1,840.22",
-};
-
-const BALANCES_DISCONNECTED: Record<TokenSymbol, string> = {
-  SOL: "—",
-  USDC: "—",
-};
+import {
+  decimalToRawAmount,
+  deserializeTransaction,
+  fetchQuote,
+  formatIntegerAmount,
+  formatRawTokenAmount,
+  inputTokenForDirection,
+  outputTokenForDirection,
+  prepareSwap,
+  rawToDecimalAmount,
+  sanitizeDecimalInput,
+  serializeTransaction,
+  submitIntent,
+  subscribeToAuctionStatus,
+  TOKENS,
+  type JupiterQuote,
+  type QuoteResponse,
+  type SwapDirection,
+  type TokenSymbol,
+} from "@/lib/flowback-relay";
 
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1];
 const JUPITER_SLIPPAGE_MIN = 0.1;
 const JUPITER_SLIPPAGE_MAX = 50;
+const SOL_FEE_RESERVE_LAMPORTS = BigInt(10_000_000);
+const QUOTE_DEBOUNCE_MS = 350;
+const STATUS_TIMEOUT_MS = 90_000;
 const TOKEN_LOGO_URLS: Record<TokenSymbol, string> = {
   SOL: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
   USDC:
     "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/assets/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
 };
 
-function sanitizeAmount(value: string) {
-  const stripped = value.replace(/[^0-9.]/g, "");
-  const [whole, ...rest] = stripped.split(".");
-  return rest.length > 0 ? `${whole}.${rest.join("")}` : whole;
-}
+type QuoteState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "ready"; data: QuoteResponse }
+  | { status: "error"; message: string };
+
+type BalanceState = {
+  loading: boolean;
+  values: Record<TokenSymbol, string | null>;
+};
+
+type StatusState = {
+  tone: "info" | "success" | "error";
+  message: string;
+  signature?: string;
+};
+
+type ParsedTokenAccount = {
+  parsed?: {
+    info?: {
+      tokenAmount?: {
+        amount?: string;
+      };
+    };
+  };
+};
+
+const EMPTY_BALANCES: Record<TokenSymbol, string | null> = {
+  SOL: null,
+  USDC: null,
+};
 
 function clampSlippage(value: number) {
   return Math.min(JUPITER_SLIPPAGE_MAX, Math.max(JUPITER_SLIPPAGE_MIN, value));
@@ -149,9 +192,13 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 }
 
 export function RouteDetails({
+  priceImpact,
+  routeLabel,
   slippage,
   setSlippage,
 }: {
+  priceImpact: string | null;
+  routeLabel: string;
   slippage: number;
   setSlippage: (value: number) => void;
 }) {
@@ -182,7 +229,7 @@ export function RouteDetails({
     <div className="swap-meta">
       <div className="row">
         <span className="k">Route</span>
-        <span className="v">Jupiter v6</span>
+        <span className="v">{routeLabel}</span>
       </div>
       <div className="row">
         <span className="k">Slippage</span>
@@ -235,10 +282,11 @@ export function RouteDetails({
                   inputMode="decimal"
                   onChange={(event) => {
                     const next = Number.parseFloat(
-                      sanitizeAmount(event.target.value),
+                      sanitizeDecimalInput(event.target.value, 2),
                     );
-                    if (!Number.isFinite(next)) return;
-                    setSlippage(clampSlippage(next));
+                    if (Number.isFinite(next)) {
+                      setSlippage(clampSlippage(next));
+                    }
                   }}
                   placeholder="custom"
                   type="text"
@@ -248,14 +296,16 @@ export function RouteDetails({
                 />
               </div>
               <div className="slippage-note">
-                Your transaction reverts if price moves beyond this.
-                Allowed range: {JUPITER_SLIPPAGE_MIN}% to{" "}
-                {JUPITER_SLIPPAGE_MAX}%. FlowBack&apos;s sealed-bid auction runs
-                independently.
+                Your transaction reverts if price moves beyond this. Allowed
+                range: {JUPITER_SLIPPAGE_MIN}% to {JUPITER_SLIPPAGE_MAX}%.
               </div>
             </div>
           ) : null}
         </span>
+      </div>
+      <div className="row">
+        <span className="k">Price impact</span>
+        <span className="v">{priceImpact ?? "—"}</span>
       </div>
       <div className="row">
         <span className="k">Auction window</span>
@@ -268,41 +318,164 @@ export function RouteDetails({
 export function SwapCard({
   onCashback,
 }: {
-  onCashback?: (lamports: number, sig: string) => void;
+  onCashback?: (lamports: string, sig: string) => void;
 }) {
-  const { connected } = useWallet();
+  const { connection } = useConnection();
+  const { connected, publicKey, signTransaction } = useWallet();
   const [direction, setDirection] = useState<SwapDirection>("buy");
   const [amountIn, setAmountIn] = useState("1");
   const [slippage, setSlippage] = useState(0.5);
   const [walletOpen, setWalletOpen] = useState(false);
   const [swapping, setSwapping] = useState(false);
   const [flipping, setFlipping] = useState(false);
-  const signatureNonce = useRef(0);
+  const [quoteState, setQuoteState] = useState<QuoteState>({ status: "idle" });
+  const [balances, setBalances] = useState<BalanceState>({
+    loading: false,
+    values: EMPTY_BALANCES,
+  });
+  const [status, setStatus] = useState<StatusState | null>(null);
   const flipTimerRef = useRef<number | null>(null);
+  const statusCleanupRef = useRef<(() => void) | null>(null);
+  const statusTimeoutRef = useRef<number | null>(null);
 
-  const inToken: TokenSymbol = direction === "buy" ? "USDC" : "SOL";
-  const outToken: TokenSymbol = direction === "buy" ? "SOL" : "USDC";
-  const rate = direction === "buy" ? 0.00671 : 149.04;
-  const amount = Number.parseFloat(amountIn) || 0;
-  const hasAmount = amount > 0;
-  const quote = hasAmount
-    ? (amount * rate).toFixed(direction === "buy" ? 6 : 4)
-    : "";
-  const cashback = hasAmount
-    ? Math.round(amount * (direction === "buy" ? 180 : 26800))
-    : 0;
-  const balances = connected ? BALANCES_CONNECTED : BALANCES_DISCONNECTED;
-  const actionLabel = !connected
-    ? "Connect Wallet"
-    : !hasAmount
-      ? "Enter amount"
-      : `Swap ${inToken} for ${outToken}`;
-  const actionDisabled = connected && (!hasAmount || swapping);
+  const inputToken = inputTokenForDirection(direction);
+  const outputToken = outputTokenForDirection(direction);
+  const amountRaw = useMemo(
+    () => decimalToRawAmount(amountIn, inputToken.decimals),
+    [amountIn, inputToken.decimals],
+  );
+  const hasAmount = amountRaw !== null;
+  const slippageBps = Math.round(slippage * 100);
+  const activeQuote =
+    quoteState.status === "ready" ? quoteState.data.quote : null;
+  const cashbackEstimate =
+    quoteState.status === "ready"
+      ? (quoteState.data.cashbackEstimate?.lamports ?? null)
+      : null;
+  const quoteDisplay = activeQuote
+    ? formatRawTokenAmount(activeQuote.outAmount, outputToken)
+    : quoteState.status === "loading"
+      ? "Fetching..."
+      : "";
+  const routeLabel = activeQuote ? getRouteLabel(activeQuote) : "Jupiter";
+  const priceImpact = activeQuote
+    ? formatPriceImpact(activeQuote.priceImpactPct)
+    : null;
+  const actionDisabled =
+    connected &&
+    (swapping ||
+      !hasAmount ||
+      quoteState.status !== "ready" ||
+      !signTransaction);
+  const actionLabel = getActionLabel({
+    connected,
+    hasAmount,
+    quoteState,
+    signTransaction: Boolean(signTransaction),
+    swapping,
+    inputToken: inputToken.symbol,
+    outputToken: outputToken.symbol,
+  });
+
+  const clearAuctionWatch = useCallback(() => {
+    statusCleanupRef.current?.();
+    statusCleanupRef.current = null;
+    if (statusTimeoutRef.current) {
+      window.clearTimeout(statusTimeoutRef.current);
+      statusTimeoutRef.current = null;
+    }
+  }, []);
+
+  const refreshBalances = useCallback(async () => {
+    if (!publicKey) return;
+
+    setBalances((current) => ({ ...current, loading: true }));
+    try {
+      const [solLamports, usdcAccounts] = await Promise.all([
+        connection.getBalance(publicKey, "confirmed"),
+        connection.getParsedTokenAccountsByOwner(publicKey, {
+          mint: new PublicKey(TOKENS.USDC.mint),
+        }),
+      ]);
+
+      let usdcRaw = BigInt(0);
+      for (const account of usdcAccounts.value) {
+        const amount = (account.account.data as ParsedTokenAccount).parsed?.info
+          ?.tokenAmount?.amount;
+        if (amount) usdcRaw += BigInt(amount);
+      }
+
+      setBalances({
+        loading: false,
+        values: {
+          SOL: solLamports.toString(),
+          USDC: usdcRaw.toString(),
+        },
+      });
+    } catch {
+      setBalances({ loading: false, values: EMPTY_BALANCES });
+    }
+  }, [connection, publicKey]);
+
+  useEffect(() => {
+    if (!connected || !publicKey) {
+      setBalances({ loading: false, values: EMPTY_BALANCES });
+      return;
+    }
+
+    void refreshBalances();
+  }, [connected, publicKey, refreshBalances]);
+
+  useEffect(() => {
+    if (!amountRaw) {
+      setQuoteState({ status: "idle" });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setQuoteState({ status: "loading" });
+      fetchQuote({
+        inputMint: inputToken.mint,
+        outputMint: outputToken.mint,
+        amount: amountRaw,
+        slippageBps,
+        signal: controller.signal,
+      })
+        .then((data) => setQuoteState({ status: "ready", data }))
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          setQuoteState({
+            status: "error",
+            message: getErrorMessage(error, "Quote unavailable"),
+          });
+        });
+    }, QUOTE_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [amountRaw, inputToken.mint, outputToken.mint, slippageBps]);
+
+  useEffect(() => {
+    return () => {
+      clearAuctionWatch();
+      if (flipTimerRef.current) window.clearTimeout(flipTimerRef.current);
+    };
+  }, [clearAuctionWatch]);
 
   function flipTokens() {
     if (flipping) return;
 
-    const nextAmountIn = quote;
+    const nextAmountIn = activeQuote
+      ? rawToDecimalAmount(
+          activeQuote.outAmount,
+          outputToken.decimals,
+          outputToken.decimals,
+        )
+      : "";
+
     setFlipping(true);
     if (flipTimerRef.current) {
       window.clearTimeout(flipTimerRef.current);
@@ -310,34 +483,149 @@ export function SwapCard({
     flipTimerRef.current = window.setTimeout(() => {
       setDirection((current) => (current === "buy" ? "sell" : "buy"));
       setAmountIn(nextAmountIn);
+      setStatus(null);
       setFlipping(false);
       flipTimerRef.current = null;
     }, 260);
   }
 
-  useEffect(() => {
-    return () => {
-      if (flipTimerRef.current) {
-        window.clearTimeout(flipTimerRef.current);
-      }
-    };
-  }, []);
+  function handleAmountChange(event: ChangeEvent<HTMLInputElement>) {
+    setAmountIn(sanitizeDecimalInput(event.target.value, inputToken.decimals));
+    setStatus(null);
+  }
+
+  function setMaxAmount() {
+    const raw = balances.values[inputToken.symbol];
+    if (!raw) return;
+
+    const spendable =
+      inputToken.symbol === "SOL"
+        ? maxBigInt(BigInt(0), BigInt(raw) - SOL_FEE_RESERVE_LAMPORTS)
+        : BigInt(raw);
+
+    setAmountIn(
+      rawToDecimalAmount(spendable, inputToken.decimals, inputToken.decimals),
+    );
+    setStatus(null);
+  }
 
   async function handleAction() {
     if (!connected) {
       setWalletOpen(true);
       return;
     }
-    if (!hasAmount || swapping) return;
+    if (
+      !publicKey ||
+      !signTransaction ||
+      !amountRaw ||
+      quoteState.status !== "ready" ||
+      swapping
+    ) {
+      return;
+    }
 
+    const quote = quoteState.data.quote;
+    if (quote.inAmount !== amountRaw) {
+      setStatus({ tone: "error", message: "Quote is stale. Try again." });
+      return;
+    }
+
+    clearAuctionWatch();
     setSwapping(true);
-    await new Promise((resolve) => window.setTimeout(resolve, 2000));
-    setSwapping(false);
-    signatureNonce.current += 1;
-    onCashback?.(
-      cashback,
-      `5xCB${signatureNonce.current.toString(36).padStart(6, "0")}`,
-    );
+    setStatus({ tone: "info", message: "Preparing transaction..." });
+
+    try {
+      const prepared = await prepareSwap({
+        user: publicKey.toBase58(),
+        inputMint: inputToken.mint,
+        outputMint: outputToken.mint,
+        inputAmount: quote.inAmount,
+        minOutputAmount: quote.otherAmountThreshold,
+        maxSlippageBps: slippageBps,
+      });
+
+      const transaction = deserializeTransaction(prepared.unsignedTx);
+      setStatus({ tone: "info", message: "Simulating transaction..." });
+
+      const simulation = await connection.simulateTransaction(transaction, {
+        commitment: "processed",
+        replaceRecentBlockhash: false,
+        sigVerify: false,
+      });
+
+      if (simulation.value.err) {
+        throw new Error("Simulation failed. Refresh the quote and try again.");
+      }
+
+      setStatus({ tone: "info", message: "Approve the swap in your wallet." });
+      const signed = await signTransaction(transaction);
+
+      setStatus({ tone: "info", message: "Submitting intent..." });
+      const intent = await submitIntent({
+        prepareId: prepared.prepareId,
+        signedTx: serializeTransaction(signed),
+      });
+
+      setStatus({
+        tone: "info",
+        message: "Auction pending. Waiting for relay status...",
+      });
+
+      statusCleanupRef.current = subscribeToAuctionStatus(
+        intent.auctionId,
+        (event) => {
+          if (event.type === "bundle_submitted") {
+            setStatus({
+              tone: "info",
+              message: "Bundle submitted. Waiting for cashback...",
+            });
+            return;
+          }
+
+          clearAuctionWatch();
+          setSwapping(false);
+          void refreshBalances();
+
+          if (event.type === "fallback_executed") {
+            setStatus({
+              tone: "success",
+              message: "Swap submitted without cashback this time.",
+              signature: event.txSignature,
+            });
+            return;
+          }
+
+          setStatus({
+            tone: "success",
+            message: "Cashback confirmed.",
+            signature: event.txSignature,
+          });
+          onCashback?.(event.cashbackLamports, event.txSignature);
+        },
+        () => {
+          setStatus({
+            tone: "error",
+            message: "Status stream disconnected. Check wallet activity.",
+          });
+        },
+      );
+
+      statusTimeoutRef.current = window.setTimeout(() => {
+        clearAuctionWatch();
+        setSwapping(false);
+        setStatus({
+          tone: "info",
+          message: "Intent submitted. Confirmation is still pending.",
+        });
+      }, STATUS_TIMEOUT_MS);
+    } catch (error) {
+      clearAuctionWatch();
+      setSwapping(false);
+      setStatus({
+        tone: "error",
+        message: getErrorMessage(error, "Swap failed. Try again."),
+      });
+    }
   }
 
   return (
@@ -346,7 +634,7 @@ export function SwapCard({
         <div className="swap-card">
           <div className="swap-head">
             <h3>Swap</h3>
-            <span className="eyebrow-live">Devnet · live</span>
+            <span className="eyebrow-live">Mainnet · live</span>
           </div>
 
           <div className="swap-rows" data-flipping={flipping}>
@@ -356,17 +644,15 @@ export function SwapCard({
               </label>
               <div className="body">
                 <span className="token-chip">
-                  <TokenLogo token={inToken} />
-                  {inToken}
+                  <TokenLogo token={inputToken.symbol} />
+                  {inputToken.symbol}
                 </span>
                 <input
                   autoComplete="off"
                   className="token-amount"
                   id="flowback-pay-amount"
                   inputMode="decimal"
-                  onChange={(event) =>
-                    setAmountIn(sanitizeAmount(event.target.value))
-                  }
+                  onChange={handleAmountChange}
                   placeholder="0.00"
                   spellCheck={false}
                   type="text"
@@ -374,21 +660,25 @@ export function SwapCard({
                 />
               </div>
               <div className="foot">
-                <span>Balance: {balances[inToken]}</span>
+                <span>
+                  Balance:{" "}
+                  {formatBalanceLabel(
+                    connected,
+                    balances,
+                    inputToken.symbol,
+                  )}
+                </span>
                 {connected ? (
                   <button
                     className="max-btn"
-                    onClick={() =>
-                      setAmountIn(BALANCES_CONNECTED[inToken].replace(/,/g, ""))
-                    }
+                    disabled={!balances.values[inputToken.symbol]}
+                    onClick={setMaxAmount}
                     type="button"
                   >
                     Max
                   </button>
                 ) : (
-                  <span>
-                    {hasAmount ? `1 ${inToken} ≈ ${rate} ${outToken}` : ""}
-                  </span>
+                  <span>{quoteState.status === "ready" ? "Quote ready" : ""}</span>
                 )}
               </div>
             </div>
@@ -421,8 +711,8 @@ export function SwapCard({
               </label>
               <div className="body">
                 <span className="token-chip">
-                  <TokenLogo token={outToken} />
-                  {outToken}
+                  <TokenLogo token={outputToken.symbol} />
+                  {outputToken.symbol}
                 </span>
                 <input
                   className="token-amount"
@@ -430,14 +720,19 @@ export function SwapCard({
                   placeholder="—"
                   readOnly
                   type="text"
-                  value={quote}
+                  value={quoteDisplay}
                 />
               </div>
               <div className="foot">
-                <span>Balance: {balances[outToken]}</span>
                 <span>
-                  {hasAmount ? `1 ${inToken} ≈ ${rate} ${outToken}` : ""}
+                  Balance:{" "}
+                  {formatBalanceLabel(
+                    connected,
+                    balances,
+                    outputToken.symbol,
+                  )}
                 </span>
+                <span>{getQuoteFootnote(quoteState)}</span>
               </div>
             </div>
           </div>
@@ -447,16 +742,33 @@ export function SwapCard({
               <span>FlowBack cashback</span>
             </div>
             <div className={`value${hasAmount ? "" : " empty"}`}>
-              {hasAmount ? (
-                <>
-                  ≈ {cashback.toLocaleString("en-US")}
-                  <span className="u">lamports</span>
-                </>
-              ) : (
-                "—"
-              )}
+              {getCashbackLabel(quoteState.status, cashbackEstimate)}
             </div>
           </div>
+
+          {quoteState.status === "error" ? (
+            <p className="swap-state error" role="alert">
+              {quoteState.message}
+            </p>
+          ) : null}
+
+          {status ? (
+            <p className={`swap-state ${status.tone}`} role="status">
+              {status.message}
+              {status.signature ? (
+                <>
+                  {" "}
+                  <a
+                    href={`https://explorer.solana.com/tx/${status.signature}`}
+                    rel="noopener noreferrer"
+                    target="_blank"
+                  >
+                    View transaction
+                  </a>
+                </>
+              ) : null}
+            </p>
+          ) : null}
 
           <button
             aria-busy={swapping || undefined}
@@ -466,14 +778,105 @@ export function SwapCard({
             onClick={handleAction}
             type="button"
           >
-            {swapping ? "Swapping..." : actionLabel}
+            {actionLabel}
           </button>
         </div>
 
-        <RouteDetails slippage={slippage} setSlippage={setSlippage} />
+        <RouteDetails
+          priceImpact={priceImpact}
+          routeLabel={routeLabel}
+          setSlippage={setSlippage}
+          slippage={slippage}
+        />
       </div>
 
       {walletOpen ? <WalletModal onClose={() => setWalletOpen(false)} /> : null}
     </>
   );
+}
+
+function getActionLabel({
+  connected,
+  hasAmount,
+  inputToken,
+  outputToken,
+  quoteState,
+  signTransaction,
+  swapping,
+}: {
+  connected: boolean;
+  hasAmount: boolean;
+  inputToken: TokenSymbol;
+  outputToken: TokenSymbol;
+  quoteState: QuoteState;
+  signTransaction: boolean;
+  swapping: boolean;
+}) {
+  if (!connected) return "Connect Wallet";
+  if (!hasAmount) return "Enter amount";
+  if (!signTransaction) return "Wallet cannot sign";
+  if (swapping) return "Swapping...";
+  if (quoteState.status === "loading") return "Getting quote...";
+  if (quoteState.status === "error") return "Quote unavailable";
+  if (quoteState.status !== "ready") return "Get quote";
+  return `Swap ${inputToken} for ${outputToken}`;
+}
+
+function formatBalanceLabel(
+  connected: boolean,
+  balances: BalanceState,
+  token: TokenSymbol,
+) {
+  if (!connected) return "—";
+  if (balances.loading) return "Loading";
+  return formatRawTokenAmount(balances.values[token], TOKENS[token]);
+}
+
+function getQuoteFootnote(quoteState: QuoteState) {
+  if (quoteState.status === "loading") return "Fetching quote";
+  if (quoteState.status === "ready") {
+    return quoteState.data.quote.timeTaken
+      ? `${Math.round(quoteState.data.quote.timeTaken * 1000)}ms`
+      : "Jupiter";
+  }
+  if (quoteState.status === "error") return "Quote failed";
+  return "";
+}
+
+function getCashbackLabel(
+  status: QuoteState["status"],
+  cashbackLamports: string | null,
+) {
+  if (status === "loading") return "Estimating";
+  if (status === "error") return "Unavailable";
+  if (!cashbackLamports) return "—";
+
+  return (
+    <>
+      ≈ {formatIntegerAmount(cashbackLamports)}
+      <span className="u">lamports</span>
+    </>
+  );
+}
+
+function getRouteLabel(quote: JupiterQuote) {
+  const hops = quote.routePlan.length;
+  if (hops === 0) return "Jupiter";
+  return `Jupiter · ${hops} ${hops === 1 ? "hop" : "hops"}`;
+}
+
+function formatPriceImpact(value: string) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return "—";
+  if (parsed > 0 && parsed < 0.01) return "<0.01%";
+  return `${parsed.toFixed(2)}%`;
+}
+
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}
+
+function maxBigInt(a: bigint, b: bigint) {
+  return a > b ? a : b;
 }

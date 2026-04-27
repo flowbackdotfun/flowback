@@ -156,7 +156,7 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
   text-align: right;
-  text-overflow: ellipsis;
+  text-overflow: clip;
 }
 .token-amount::placeholder {
   color: var(--fg-dim);
@@ -288,6 +288,26 @@
 .swap-action:disabled {
   opacity: 0.75;
   cursor: not-allowed;
+}
+.swap-state {
+  margin: 12px 0 0;
+  color: var(--fg-dim);
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.swap-state a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.swap-state a:hover {
+  color: var(--fg);
+}
+.swap-state.error {
+  color: var(--destructive);
+}
+.swap-state.success {
+  color: var(--accent);
 }
 .swap-meta {
   display: grid;

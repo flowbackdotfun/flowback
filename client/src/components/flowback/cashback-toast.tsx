@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react";
 import { Icon } from "./icons";
 import { X } from "lucide-react";
+import { formatLamports } from "@/lib/flowback-relay";
 
 type CashbackToastProps = {
-  lamports: number;
+  lamports: string;
   txSignature: string;
   onDismiss: () => void;
 };
@@ -13,13 +14,11 @@ type CashbackToastProps = {
 export function CashbackToast({ lamports, txSignature, onDismiss }: CashbackToastProps) {
   const [visible, setVisible] = useState(false);
 
-  // Slide in on mount
   useEffect(() => {
     const t = requestAnimationFrame(() => setVisible(true));
     return () => cancelAnimationFrame(t);
   }, []);
 
-  // Auto-dismiss after 8s
   useEffect(() => {
     const timer = setTimeout(() => handleDismiss(), 8000);
     return () => clearTimeout(timer);
@@ -31,8 +30,8 @@ export function CashbackToast({ lamports, txSignature, onDismiss }: CashbackToas
     setTimeout(onDismiss, 350);
   }
 
-  const solAmount = (lamports / 1e9).toFixed(4);
-  const explorerUrl = `https://explorer.solana.com/tx/${txSignature}?cluster=devnet`;
+  const solAmount = formatLamports(lamports);
+  const explorerUrl = `https://explorer.solana.com/tx/${txSignature}`;
 
   return (
     <>
@@ -75,7 +74,6 @@ export function CashbackToast({ lamports, txSignature, onDismiss }: CashbackToas
           boxShadow: "0 20px 40px -10px oklch(0 0 0 / 0.5), 0 0 0 1px var(--accent-glow)",
         }}
       >
-        {/* Progress bar */}
         <div style={{ height: 2, background: "var(--line)", position: "relative", overflow: "hidden" }}>
           <div
             className="cashback-progress"
@@ -83,10 +81,8 @@ export function CashbackToast({ lamports, txSignature, onDismiss }: CashbackToas
           />
         </div>
 
-        {/* Body */}
         <div style={{ padding: "14px 16px 14px" }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
-            {/* Icon */}
             <div style={{
               width: 34,
               height: 34,
@@ -102,7 +98,6 @@ export function CashbackToast({ lamports, txSignature, onDismiss }: CashbackToas
               <Icon.Cashback width={16} height={16} />
             </div>
 
-            {/* Content */}
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
                 <span style={{

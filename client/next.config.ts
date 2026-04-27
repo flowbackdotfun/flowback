@@ -9,6 +9,18 @@ const nextConfig: NextConfig = {
   async rewrites() {
     return [
       {
+        source: "/api/flowback/quote",
+        destination: `${relayUrl}/quote`,
+      },
+      {
+        source: "/api/flowback/prepare",
+        destination: `${relayUrl}/prepare`,
+      },
+      {
+        source: "/api/flowback/intent",
+        destination: `${relayUrl}/intent`,
+      },
+      {
         source: "/api/waitlist",
         destination: `${relayUrl}/waitlist`,
       },
