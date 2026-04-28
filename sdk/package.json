@@ -1,21 +1,59 @@
 {
-  "name": "@flowback/sdk",
+  "name": "@flowback/searcher",
   "version": "0.0.1",
-  "description": "FlowBack searcher-facing TypeScript SDK",
+  "description": "FlowBack searcher-facing TypeScript SDK — connect to the relay, sign bid commitments, manage escrow, and build Jito-bundle txs.",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "scripts": {
-    "dev": "tsc --watch",
-    "build": "tsc"
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.cjs"
+    },
+    "./package.json": "./package.json"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "rolldown -c --watch",
+    "build": "rolldown -c",
+    "prepublishOnly": "pnpm build"
+  },
+  "keywords": [
+    "solana",
+    "mev",
+    "jito",
+    "searcher",
+    "flowback",
+    "auction",
+    "backrun",
+    "cashback"
+  ],
+  "author": "FlowBack",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/flowback/flowback.git",
+    "directory": "sdk"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "packageManager": "pnpm@10.33.0",
   "devDependencies": {
     "@types/node": "^25.6.0",
     "@types/ws": "^8.18.1",
+    "rolldown": "1.0.0-rc.17",
+    "rolldown-plugin-dts": "^0.23.2",
     "typescript": "^6.0.2"
   },
   "dependencies": {

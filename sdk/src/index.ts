@@ -31,7 +31,10 @@ export {
 } from "./builders/discriminator.js";
 export {
   JITO_TIP_ACCOUNTS,
+  DEFAULT_JITO_BLOCK_ENGINE_URL,
+  fetchJitoTipAccounts,
   pickJitoTipAccount,
+  type FetchJitoTipAccountsOptions,
 } from "./jito-tip-accounts.js";
 export type {
   AuctionResult,
