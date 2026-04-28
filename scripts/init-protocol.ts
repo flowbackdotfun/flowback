@@ -6,7 +6,7 @@ import {
   TransactionInstruction,
 } from "@solana/web3.js";
 
-import { deriveConfigPda } from "@flowback/sdk";
+import { deriveConfigPda } from "@flowback/searcher";
 
 import {
   DEFAULT_PROGRAM_ID,

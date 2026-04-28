@@ -3,7 +3,7 @@
 Three scripts that drive a full auction cycle against a local validator + relay:
 
 - `init-protocol.ts` — runs `initialize` on the deployed program (one-time per validator).
-- `searcher-bot.ts` — connects via `@flowback/sdk`, ensures escrow funded, listens for hints, signs bid commitments, submits bids. Runs N copies in parallel for a multi-searcher auction.
+- `searcher-bot.ts` — connects via `@flowback/searcher`, ensures escrow funded, listens for hints, signs bid commitments, submits bids. Runs N copies in parallel for a multi-searcher auction.
 - `send-intent.ts` — impersonates a frontend user: `POST /prepare` → sign → `POST /intent`, then listens on the user status WS for the outcome.
 
 All scripts persist their generated keypairs under `scripts/keys/` so subsequent runs reuse the same identities (so escrow PDAs stay valid across restarts).

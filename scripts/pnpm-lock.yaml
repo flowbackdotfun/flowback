@@ -8,9 +8,9 @@ importers:
 
   .:
     dependencies:
-      '@flowback/sdk':
-        specifier: file:../sdk
-        version: file:../sdk(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)
+      '@flowback/searcher':
+        specifier: ^0.0.3
+        version: 0.0.3(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)
       '@solana/web3.js':
         specifier: ^1.98.4
         version: 1.98.4(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)
@@ -196,8 +196,9 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@flowback/sdk@file:../sdk':
-    resolution: {directory: ../sdk, type: directory}
+  '@flowback/searcher@0.0.3':
+    resolution: {integrity: sha512-UwUGsACUAftkVyAscqJ0dAzeLbugaE/ykn4GaWGSz2gKaEtgT78HFIctS3IOQuKbcB+U9kCAKsxCuHuuwojw6A==}
+    engines: {node: '>=18'}
 
   '@noble/curves@1.9.7':
     resolution: {integrity: sha512-gbKGcRUYIjA3/zCCNaWDciTMFI0dCkvou3TL8Zmy5Nc7sJ47a0jtOeZoTaMxkuqRo9cRhjOdZJXegxYE5FN/xw==}
@@ -533,7 +534,7 @@ snapshots:
   '@esbuild/win32-x64@0.27.7':
     optional: true
 
-  '@flowback/sdk@file:../sdk(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)':
+  '@flowback/searcher@0.0.3(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)':
     dependencies:
       '@solana/web3.js': 1.98.4(bufferutil@4.1.0)(typescript@6.0.3)(utf-8-validate@6.0.6)
       bs58: 6.0.0

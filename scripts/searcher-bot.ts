@@ -17,7 +17,7 @@ import {
   pickJitoTipAccount,
   signBidCommitment,
   type SearcherHint,
-} from "@flowback/sdk";
+} from "@flowback/searcher";
 
 import {
   DEFAULT_PROGRAM_ID,

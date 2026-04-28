@@ -10,7 +10,7 @@
     "verify": "tsx verify-reimbursement.ts"
   },
   "dependencies": {
-    "@flowback/sdk": "file:../sdk",
+    "@flowback/searcher": "^0.0.3",
     "@solana/web3.js": "^1.98.4",
     "bs58": "^6.0.0",
     "ws": "^8.20.0"
