@@ -2,7 +2,11 @@
 
 Searcher-facing TypeScript SDK for [FlowBack](https://github.com/flowback/flowback) — a Solana sealed-bid backrun auction with on-chain cashback.
 
-Connect to the relay, sign bid commitments, manage your escrow, and assemble Jito bundles. The SDK never asks for your private key: it accepts a `Signer` interface, so you can wire it to a `Keypair`, a remote KMS, a hardware wallet, or anything else that can produce Ed25519 signatures.
+Connect to the relay, sign bid commitments, manage your escrow, and assemble Jito bundles.
+
+The SDK never asks for your private key. It accepts a `Signer` interface, so you can wire it to a `Keypair`, a remote KMS, a hardware wallet, or anything else that can produce Ed25519 signatures.
+
+---
 
 ## Install
 
@@ -13,6 +17,8 @@ npm install @flowback/searcher
 ```
 
 Requires Node 18+.
+
+---
 
 ## Quick start
 
@@ -29,7 +35,7 @@ import {
 const keypair = Keypair.fromSecretKey(/* ... */);
 
 const searcher = new FlowbackSearcher({
-  relayUrl: "wss://relay.flowback.xyz/searcher",
+  relayUrl: "wss://relay.flowback.fun/searcher",
   signer: keypairSigner(keypair),
   programId: process.env.FLOWBACK_PROGRAM_ID!,
   rpcUrl: process.env.SOLANA_RPC_URL!,
@@ -38,7 +44,7 @@ const searcher = new FlowbackSearcher({
 await searcher.connect();
 
 searcher.onHint(async (hint) => {
-  const bidAmount = computeBid(hint);            // your bid logic
+  const bidAmount = computeBid(hint);
   const tipLamports = 10_000n;
   const blockhash = await searcher.getRecentBlockhash();
 
@@ -49,6 +55,7 @@ searcher.onHint(async (hint) => {
   });
 
   const backrunTx = await yourBuildBackrunTx(hint, blockhash);
+
   const tipTx = await buildJitoTipTx({
     signer: searcher.signer,
     tipLamports,
@@ -71,17 +78,83 @@ searcher.onAuctionResult((r) =>
 );
 ```
 
+---
+
 ## Concepts
 
-**Auth.** Every WebSocket connection authenticates with a signed message — `flowback-searcher-auth:<pubkey>:<timestamp>` — so the relay knows which searcher each bid came from and can rate-limit per pubkey. `connect()` handles this automatically: it builds the auth payload, signs it with your `Signer`, sends it on open, and resolves only after the relay returns `auth_ok` (rejects on timeout or `auth_error`). The timestamp must be within ±60s of relay clock; the SDK uses `Date.now()`. If you ever need the raw payload (e.g. to sign offline or proxy through your own service), `buildAuthMessage(signer, timestamp?)` is exported.
+### Auth
 
-**Hints.** When a user submits an intent, the relay broadcasts a hint to every authenticated searcher. Hints deliberately omit the user's wallet address and exact swap size — only the token pair, a coarse size bucket, and the price-impact estimate are revealed. Searchers have until `auctionDeadlineMs` to bid.
+Every WebSocket connection authenticates with a signed message:
 
-**Bid commitment.** Searchers sign an off-chain message — `flowback-bid:<hintId>:<bidAmount>` — committing to their bid amount for a specific hint. The signature is sent over WebSocket; the FlowBack on-chain program later verifies it via Solana's Ed25519 sigverify precompile when the relay constructs the settlement tx. The user pubkey is never revealed to searchers.
+```
+flowback-searcher-auth:<pubkey>:<timestamp>
+```
 
-**Escrow.** Every searcher keeps a SOL balance in a program-owned escrow PDA. When you win an auction, the program debits your escrow by `bidAmount + reimbursement`, credits the user (90%) and treasury (10%), and reimburses the relay's tx fee + rent (~`10_000` lamports + UsedHint rent). You fund the escrow with `buildEscrowDepositTx` and pull idle balance with `buildEscrowWithdrawTx`.
+This lets the relay attribute bids to specific searchers and rate-limit per pubkey.
 
-**Bundles.** Searchers supply two transactions — a backrun and a Jito tip — and the relay assembles the final bundle (Tx1 user swap + Tx2 backrun + Tx3 settlement). The SDK gives you `buildJitoTipTx` for the tip leg; the backrun is your own logic.
+`connect()` handles this for you. It builds the auth payload, signs it with your `Signer`, sends it on open, and resolves only after the relay returns `auth_ok`. It rejects on timeout or `auth_error`.
+
+The timestamp must be within ±60s of the relay clock — the SDK uses `Date.now()`.
+
+If you ever need the raw payload (e.g. to sign offline or proxy the connection through your own service), `buildAuthMessage(signer, timestamp?)` is exported.
+
+---
+
+### Hints
+
+When a user submits an intent, the relay broadcasts a hint to every authenticated searcher.
+
+Hints deliberately omit the user's wallet address and exact swap size. Only the token pair, a coarse size bucket, and the price-impact estimate are revealed.
+
+Searchers have until `auctionDeadlineMs` to bid.
+
+---
+
+### Bid commitment
+
+Searchers sign an off-chain message:
+
+```
+flowback-bid:<hintId>:<bidAmount>
+```
+
+This commits them to a specific bid amount for a specific hint.
+
+The signature is sent over WebSocket. The FlowBack on-chain program later verifies it via Solana's Ed25519 sigverify precompile when the relay constructs the settlement tx.
+
+**The user pubkey is never revealed to searchers.**
+
+---
+
+### Escrow
+
+Every searcher keeps a SOL balance in a program-owned escrow PDA.
+
+When you win an auction, the program:
+
+- debits your escrow by `bidAmount + reimbursement`
+- credits the user (90%) and treasury (10%)
+- reimburses the relay's tx fee + rent (~`10_000` lamports + UsedHint rent)
+
+Fund the escrow with `buildEscrowDepositTx`. Pull idle balance with `buildEscrowWithdrawTx`.
+
+---
+
+### Bundles
+
+Searchers supply two transactions — a backrun and a Jito tip.
+
+The relay assembles the final bundle:
+
+```
+Tx1  user swap
+Tx2  searcher backrun
+Tx3  on-chain settlement (built and signed by the relay)
+```
+
+The SDK gives you `buildJitoTipTx` for the tip leg. The backrun is your own logic.
+
+---
 
 ## API
 
@@ -89,20 +162,37 @@ searcher.onAuctionResult((r) =>
 
 ```ts
 interface ClientConfig {
-  relayUrl: string;        // ws:// or wss:// — relay's /searcher endpoint
-  signer: Signer;          // your Ed25519 signer (see `keypairSigner`)
-  programId: string;       // FlowBack on-chain program id
-  rpcUrl: string;          // Solana RPC for blockhash fetching
+  relayUrl: string;   // ws:// or wss:// — relay's /searcher endpoint
+  signer: Signer;     // your Ed25519 signer (see `keypairSigner`)
+  programId: string;  // FlowBack on-chain program id
+  rpcUrl: string;     // Solana RPC for blockhash fetching
 }
 ```
 
-Methods:
+**Methods**
 
-- `connect(): Promise<void>` — opens the WebSocket, signs the auth challenge, and resolves on `auth_ok`. Rejects on auth failure or 5s timeout.
-- `disconnect(): void` — closes cleanly.
-- `getRecentBlockhash(): Promise<string>` — convenience wrapper.
-- `submitBid(bid): Promise<void>` — resolves on `bid_accepted`, rejects on `bid_rejected`.
-- `onHint(cb)`, `onAuctionResult(cb)`, `onBidAccepted(cb)`, `onBidRejected(cb)`, `onError(cb)`, `onDisconnect(cb)` — typed event hooks.
+- `connect(): Promise<void>`
+  Opens the WebSocket, signs the auth challenge, resolves on `auth_ok`. Rejects on auth failure or 5s timeout.
+
+- `disconnect(): void`
+  Closes cleanly.
+
+- `getRecentBlockhash(): Promise<string>`
+  Convenience wrapper around `Connection.getLatestBlockhash()`.
+
+- `submitBid(bid): Promise<void>`
+  Resolves on `bid_accepted`, rejects on `bid_rejected`.
+
+**Event hooks**
+
+- `onHint(cb)`
+- `onAuctionResult(cb)`
+- `onBidAccepted(cb)`
+- `onBidRejected(cb)`
+- `onError(cb)`
+- `onDisconnect(cb)`
+
+---
 
 ### Signers
 
@@ -112,7 +202,7 @@ import { keypairSigner } from "@flowback/searcher";
 const signer = keypairSigner(keypair);
 ```
 
-Or implement the `Signer` interface yourself for KMS / hardware wallet / remote signing setups:
+Or implement the `Signer` interface yourself for KMS, hardware wallet, or remote-signing setups:
 
 ```ts
 interface Signer {
@@ -122,19 +212,30 @@ interface Signer {
 }
 ```
 
+---
+
 ### Builders
 
-- `buildAuthMessage(signer, timestamp?)` — produces the signed `{ type: "auth", pubkey, signature, timestamp }` payload. Normally you don't call this directly; `connect()` does. Useful if you proxy the WS connection through your own service.
-- `signBidCommitment({ signer, hintId, bidAmount })` — produces the base58 Ed25519 signature of `flowback-bid:<hintId>:<bidAmount>`.
-- `buildEscrowInitTx`, `buildEscrowDepositTx`, `buildEscrowWithdrawTx` — manage your escrow PDA.
-- `buildJitoTipTx` — single `SystemProgram.transfer` to a Jito tip account, signed by you.
+- `buildAuthMessage(signer, timestamp?)`
+  Produces the signed `{ type: "auth", pubkey, signature, timestamp }` payload. Normally `connect()` calls this for you. Useful if you proxy the WS connection through your own service.
+
+- `signBidCommitment({ signer, hintId, bidAmount })`
+  Produces the base58 Ed25519 signature of `flowback-bid:<hintId>:<bidAmount>`.
+
+- `buildEscrowInitTx`, `buildEscrowDepositTx`, `buildEscrowWithdrawTx`
+  Manage your escrow PDA.
+
+- `buildJitoTipTx`
+  Single `SystemProgram.transfer` to a Jito tip account, signed by you.
+
+---
 
 ### Jito tip accounts
 
 ```ts
 import {
-  JITO_TIP_ACCOUNTS,           // hardcoded snapshot (8 mainnet accounts)
-  fetchJitoTipAccounts,        // optional refresh via getTipAccounts RPC
+  JITO_TIP_ACCOUNTS,      // hardcoded snapshot — 8 mainnet accounts
+  fetchJitoTipAccounts,   // optional refresh via getTipAccounts RPC
   pickJitoTipAccount,
 } from "@flowback/searcher";
 
@@ -145,6 +246,8 @@ const tip = pickJitoTipAccount();
 const fresh = await fetchJitoTipAccounts();
 const tip2 = pickJitoTipAccount(fresh);
 ```
+
+---
 
 ### PDAs and discriminators
 
@@ -163,6 +266,8 @@ import {
   deriveEscrowPda,
 } from "@flowback/searcher";
 ```
+
+---
 
 ## License
 

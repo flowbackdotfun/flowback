@@ -1,6 +1,6 @@
 {
   "name": "@flowback/searcher",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "FlowBack searcher-facing TypeScript SDK — connect to the relay, sign bid commitments, manage escrow, and build Jito-bundle txs.",
   "type": "module",
   "main": "./dist/index.cjs",
@@ -40,10 +40,14 @@
   ],
   "author": "FlowBack",
   "license": "MIT",
+  "homepage": "https://flowback.fun",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/flowback/flowback.git",
+    "url": "git+https://github.com/flowbackdotfun/flowback.git",
     "directory": "sdk"
+  },
+  "bugs": {
+    "url": "https://github.com/flowbackdotfun/flowback/issues"
   },
   "publishConfig": {
     "access": "public"
