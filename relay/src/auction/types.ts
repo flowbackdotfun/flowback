@@ -34,8 +34,15 @@ export interface SearcherBid {
   userCashbackLamports: bigint;
   jitoTipLamports: bigint;
   backrunTx: string;
-  cashbackTx: string;
   tipTx: string;
+  /**
+   * Base58 Ed25519 signature by the searcher over the canonical bid
+   * commitment message: `flowback-bid:<hex hintId>:<decimal bidAmount>`.
+   * The settlement tx (built by the relay) embeds this signature in an
+   * Ed25519Program instruction; the FlowBack program verifies it via the
+   * instructions sysvar before debiting the searcher's escrow PDA.
+   */
+  bidCommitmentSig: string;
   receivedAt: number;
 }
 

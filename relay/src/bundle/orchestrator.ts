@@ -4,6 +4,7 @@ import type {
   SendTransactionApi,
   SimulateTransactionApi,
 } from "@solana/kit";
+import type { Connection, Keypair } from "@solana/web3.js";
 
 import type { SearcherBid, SwapIntent } from "../auction/types.js";
 import {
@@ -22,7 +23,7 @@ export type OrchestrateStatus =
   | "landed" // bundle confirmed on-chain
   | "failed" // every candidate bundle was rejected by Jito
   | "timeout" // Jito stream timed out for the winning candidate
-  | "no_valid_winner" // every candidate failed tier-1 or tier-2 validation
+  | "no_valid_winner" // every candidate failed tier-2 / settle build
   | "fallback"; // no bids — user-signed Jupiter swap submitted via plain RPC
 
 export interface OrchestrateResult {
@@ -35,17 +36,20 @@ export interface OrchestrateResult {
 
 export interface OrchestrateSwapParams {
   intent: SwapIntent;
-  // User-signed Jupiter v0 tx from /prepare. Same bytes are used both for Tx1
-  // in the bundle path and for direct submission in the fallback path.
+  hintId: string;
+  /** User-signed Jupiter v0 tx from /prepare. Same bytes are used both for Tx1 in the bundle path and for direct submission in the fallback path. */
   userSignedSwapTx: string;
-  // Sorted desc by userCashbackLamports — AuctionManager already returns them this way.
+  /** Sorted desc by userCashbackLamports — AuctionManager already returns them this way. */
   bids: readonly SearcherBid[];
   programId: string;
   treasury: string;
+  /** Relay keypair — fee payer + signer for the on-chain settlement tx (Tx3). */
+  relayKeypair: Keypair;
+  /** Web3.js connection used to fetch the latest blockhash for Tx3. */
+  connection: Connection;
   rpc: Rpc<SimulateTransactionApi & SendTransactionApi>;
   maxCandidates?: number;
-  // Called as soon as Jito accepts a bundle UUID, before we wait on the result
-  // stream. Lets the caller emit a `bundle_submitted` frontend event early.
+  /** Called as soon as Jito accepts a bundle UUID, before we wait on the result stream. Lets the caller emit a `bundle_submitted` frontend event early. */
   onBundleSubmitted?: (bundleId: string, winnerBid: SearcherBid) => void;
 }
 
@@ -54,10 +58,11 @@ export interface OrchestrateSwapParams {
  *
  *   bids empty     → submit the user-signed Jupiter swap via plain RPC,
  *                    return status: 'fallback' with txSignature.
- *   bids present   → walk the top candidates; for each, validate + submit the
- *                    bundle and wait on the Jito gRPC stream for a terminal
- *                    state. Skip candidates that fail validation or that Jito
- *                    'fails'. 'landed' and 'timeout' stop the loop.
+ *   bids present   → walk the top candidates; for each, run tier-2 simulation
+ *                    and build the relay-signed settle tx. If both succeed,
+ *                    submit the bundle and wait on the Jito result stream for
+ *                    a terminal state. Skip candidates that fail validation
+ *                    or that Jito 'fails'. 'landed' and 'timeout' stop the loop.
  */
 export async function orchestrateSwap(
   params: OrchestrateSwapParams,
@@ -73,27 +78,41 @@ export async function orchestrateSwap(
 
   for (const winnerBid of candidates) {
     attempts++;
+    console.log(
+      `[orch] candidate  hint=${params.hintId.slice(0, 8)}  attempt=${attempts}  searcher=${winnerBid.searcherPubkey.slice(0, 6)}…  bid=${winnerBid.userCashbackLamports}`,
+    );
     let wireTxs: readonly Base64EncodedWireTransaction[];
     try {
       wireTxs = await buildJitoBundle({
         userSignedSwapTx: params.userSignedSwapTx,
         winnerBid,
-        cashbackExpectations: {
-          programId: params.programId,
-          user: params.intent.user,
-          treasury: params.treasury,
-          bidAmountLamports: winnerBid.userCashbackLamports,
-        },
+        intent: params.intent,
+        hintId: params.hintId,
+        programId: params.programId,
+        treasury: params.treasury,
+        relayKeypair: params.relayKeypair,
+        connection: params.connection,
         rpc: params.rpc,
       });
     } catch (err) {
-      if (err instanceof BundleValidationError) continue;
+      if (err instanceof BundleValidationError) {
+        console.warn(
+          `[orch] skip       hint=${params.hintId.slice(0, 8)}  stage=${err.stage}  reason="${err.message}"`,
+        );
+        continue;
+      }
       throw err;
     }
 
+    console.log(
+      `[orch] submit     hint=${params.hintId.slice(0, 8)}  txs=${wireTxs.length}`,
+    );
     const bundleId = await submitBundle(wireTxs);
     params.onBundleSubmitted?.(bundleId, winnerBid);
     const status: BundleStatus = await pollBundleStatus(bundleId);
+    console.log(
+      `[orch] result     hint=${params.hintId.slice(0, 8)}  bundleId=${bundleId.slice(0, 8)}…  status=${status}`,
+    );
 
     if (status === "landed") {
       return { status: "landed", bundleId, winnerBid, attempts };
@@ -104,6 +123,9 @@ export async function orchestrateSwap(
     // 'failed' — try the next candidate.
   }
 
+  console.warn(
+    `[orch] no winner  hint=${params.hintId.slice(0, 8)}  attempts=${attempts}`,
+  );
   return { status: "no_valid_winner", attempts };
 }
 

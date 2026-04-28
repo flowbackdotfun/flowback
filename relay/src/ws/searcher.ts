@@ -14,7 +14,7 @@ import type {
 
 import type { AuctionManager, SearcherRegistry } from "../auction/manager.js";
 import type { SearcherBid, SearcherHint } from "../auction/types.js";
-import { validateCashbackTx } from "../auction/validator.js";
+import { validateBidCommitment } from "../auction/validator.js";
 import { db as defaultDb } from "../db/client.js";
 import { searchers } from "../db/schema.js";
 
@@ -43,8 +43,9 @@ interface BidMessage {
   userCashbackLamports: string;
   jitoTipLamports: string;
   backrunTx: string;
-  cashbackTx: string;
   tipTx: string;
+  /** Base58 Ed25519 signature over `flowback-bid:<hex hintId>:<bidAmount>`. */
+  bidCommitmentSig: string;
 }
 
 type IncomingMessage = AuthMessage | BidMessage;
@@ -52,8 +53,6 @@ type IncomingMessage = AuthMessage | BidMessage;
 export interface SearcherWsDeps {
   auctionManager: AuctionManager;
   registry: SearcherWsRegistry;
-  programId: string;
-  treasury: string;
   db?: Db;
   allowlist?: ReadonlySet<string>;
 }
@@ -252,16 +251,18 @@ async function handleBid(
     userCashbackLamports,
     jitoTipLamports,
     backrunTx: msg.backrunTx,
-    cashbackTx: msg.cashbackTx,
     tipTx: msg.tipTx,
+    bidCommitmentSig: msg.bidCommitmentSig,
     receivedAt: Date.now(),
   };
 
-  // Tier-1: decode cashbackTx and verify it semantically matches the WS bid.
-  const tier1 = validateCashbackTx(bid.cashbackTx, {
-    programId: deps.programId,
-    user: auction.intent.user,
-    treasury: deps.treasury,
+  // Tier-1: verify the searcher's Ed25519 signature over the canonical bid
+  // commitment. The relay re-uses this signature when constructing the
+  // on-chain settlement tx, where the FlowBack program re-verifies it via
+  // the Ed25519 sigverify precompile.
+  const tier1 = await validateBidCommitment(bid.bidCommitmentSig, {
+    hintId: bid.hintId,
+    searcherPubkey: bid.searcherPubkey,
     bidAmountLamports: bid.userCashbackLamports,
   });
   if (!tier1) {
@@ -270,7 +271,7 @@ async function handleBid(
       JSON.stringify({
         type: "bid_rejected",
         hintId: msg.hintId,
-        reason: "cashback_validation_failed",
+        reason: "bid_commitment_invalid",
       }),
     );
     return;

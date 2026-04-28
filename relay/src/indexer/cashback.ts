@@ -84,16 +84,19 @@ async function handleEvent(
   try {
     const auction = await lookupAuction(db, event.user, event.searcher);
 
-    await db.insert(cashbackEvents).values({
-      txSignature: signature,
-      userPubkey: event.user,
-      searcherPubkey: event.searcher,
-      bidAmountLamports: event.bidAmountLamports,
-      cashbackLamports: event.userCashbackLamports,
-      protocolFeeLamports: event.protocolFeeLamports,
-      auctionId: auction?.id ?? null,
-      timestamp: new Date(Number(event.timestamp) * 1000),
-    }).onConflictDoNothing();
+    await db
+      .insert(cashbackEvents)
+      .values({
+        txSignature: signature,
+        userPubkey: event.user,
+        searcherPubkey: event.searcher,
+        bidAmountLamports: event.bidAmountLamports,
+        cashbackLamports: event.userCashbackLamports,
+        protocolFeeLamports: event.protocolFeeLamports,
+        auctionId: auction?.id ?? null,
+        timestamp: new Date(Number(event.timestamp) * 1000),
+      })
+      .onConflictDoNothing();
 
     if (auction) {
       emitter.emitCashbackConfirmed(
@@ -111,9 +114,18 @@ async function handleEvent(
       auctionId: auction?.id ?? null,
     });
   } catch (err) {
-    console.error("[indexer] failed to handle CashbackSettled:", { signature, err });
+    console.error("[indexer] failed to handle CashbackSettled:", {
+      signature,
+      err,
+    });
   }
 }
+
+// Race window: the auction row is written in finalizeAuction's `finally` block
+// AFTER orchestrateSwap returns. The settle tx lands inside orchestrateSwap, so
+// the indexer's WS notification can arrive before the row exists. Retry briefly.
+const LOOKUP_RETRY_ATTEMPTS = 8;
+const LOOKUP_RETRY_DELAY_MS = 150;
 
 async function lookupAuction(
   db: Db,
@@ -122,20 +134,28 @@ async function lookupAuction(
 ): Promise<{ id: string; hintId: string } | null> {
   const cutoff = new Date(Date.now() - AUCTION_LOOKUP_WINDOW_MS);
 
-  const rows = await db
-    .select({ id: auctions.id, hintId: auctions.hintId })
-    .from(auctions)
-    .where(
-      and(
-        eq(auctions.userPubkey, userPubkey),
-        eq(auctions.winnerPubkey, searcherPubkey),
-        gt(auctions.settledAt, cutoff),
-      ),
-    )
-    .orderBy(desc(auctions.settledAt))
-    .limit(1);
+  for (let attempt = 0; attempt < LOOKUP_RETRY_ATTEMPTS; attempt++) {
+    const rows = await db
+      .select({ id: auctions.id, hintId: auctions.hintId })
+      .from(auctions)
+      .where(
+        and(
+          eq(auctions.userPubkey, userPubkey),
+          eq(auctions.winnerPubkey, searcherPubkey),
+          gt(auctions.settledAt, cutoff),
+        ),
+      )
+      .orderBy(desc(auctions.settledAt))
+      .limit(1);
 
-  return rows[0] ?? null;
+    if (rows[0]) return rows[0];
+    await sleep(LOOKUP_RETRY_DELAY_MS);
+  }
+  return null;
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((res) => setTimeout(res, ms));
 }
 
 function parseCashbackSettledEvent(
@@ -173,7 +193,9 @@ function decodeEvent(bytes: Buffer): CashbackSettledEvent {
   const user = new PublicKey(bytes.subarray(offset, offset + 32)).toBase58();
   offset += 32;
 
-  const searcher = new PublicKey(bytes.subarray(offset, offset + 32)).toBase58();
+  const searcher = new PublicKey(
+    bytes.subarray(offset, offset + 32),
+  ).toBase58();
   offset += 32;
 
   const bidAmountLamports = bytes.readBigUInt64LE(offset);

@@ -9,6 +9,7 @@ import {
   type SendTransactionApi,
   type SimulateTransactionApi,
 } from "@solana/kit";
+import type { Connection, Keypair } from "@solana/web3.js";
 
 import { AuctionManager, bucketFor } from "../auction/manager.js";
 import type { SearcherBid, SwapIntent } from "../auction/types.js";
@@ -54,6 +55,10 @@ export interface IntentServiceDeps {
   programId: string;
   treasury: string;
   rpc: Rpc<SimulateTransactionApi & SendTransactionApi>;
+  /** Relay keypair — signs the on-chain settlement tx (Tx3). */
+  relayKeypair: Keypair;
+  /** Web3.js connection used to fetch recent blockhashes for Tx3. */
+  connection: Connection;
   db?: Db;
 }
 
@@ -153,10 +158,13 @@ async function finalizeAuction(args: FinalizeParams): Promise<void> {
     bids = await args.resolvedBids;
     result = await orchestrateSwap({
       intent: args.intent,
+      hintId: args.hintId,
       userSignedSwapTx: args.signedTx,
       bids,
       programId: args.deps.programId,
       treasury: args.deps.treasury,
+      relayKeypair: args.deps.relayKeypair,
+      connection: args.deps.connection,
       rpc: args.deps.rpc,
       onBundleSubmitted: (bundleId) => {
         args.deps.emitter.emitBundleSubmitted(args.hintId, bundleId);

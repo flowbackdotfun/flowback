@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
 import type { Base64EncodedWireTransaction } from "@solana/kit";
-import { Keypair, VersionedTransaction } from "@solana/web3.js";
+import { Connection, Keypair, VersionedTransaction } from "@solana/web3.js";
 import type { BundleResult } from "jito-ts/dist/gen/block-engine/bundle.js";
 import {
   searcherClient,
@@ -14,6 +14,22 @@ const MOCK_JITO = process.env.MOCK_JITO === "true";
 const JITO_BLOCK_ENGINE_URL = process.env.JITO_BLOCK_ENGINE_URL;
 if (!MOCK_JITO && !JITO_BLOCK_ENGINE_URL) {
   throw new Error("JITO_BLOCK_ENGINE_URL is not set");
+}
+
+/**
+ * In mock mode we additionally submit Tx3 (the relay-signed settle tx) via
+ * plain RPC so the on-chain `CashbackSettled` event is emitted and the
+ * indexer fires. The other 3 txs in the bundle (user swap, searcher backrun,
+ * jito tip) are intentionally not submitted — they're either bound to
+ * non-existent programs (mock Jupiter memo) or pointless without atomicity.
+ * Only the settle tx lands.
+ */
+let mockRpcConn: Connection | null = null;
+function getMockRpcConn(): Connection {
+  if (mockRpcConn) return mockRpcConn;
+  const rpcUrl = process.env.SOLANA_RPC_URL ?? "http://localhost:8899";
+  mockRpcConn = new Connection(rpcUrl, "confirmed");
+  return mockRpcConn;
 }
 
 const WAIT_TIMEOUT_MS = 30_000;
@@ -46,6 +62,26 @@ export async function submitBundle(
   if (MOCK_JITO) {
     const bundleId = randomUUID();
     console.log("[jito-mock] submitBundle →", bundleId, `(${transactions.length} txs)`);
+
+    // Land Tx3 (settle tx) on-chain so `CashbackSettled` is emitted and the
+    // indexer can pick it up. Best-effort: failures are logged, not fatal.
+    if (transactions.length >= 3) {
+      const settleTxB64 = transactions[2]!;
+      try {
+        const conn = getMockRpcConn();
+        const sig = await conn.sendRawTransaction(
+          Buffer.from(settleTxB64, "base64"),
+          { skipPreflight: false, maxRetries: 0 },
+        );
+        await conn.confirmTransaction(sig, "confirmed");
+        console.log(`[jito-mock] settle tx landed via plain RPC: ${sig}`);
+      } catch (err) {
+        console.error(
+          "[jito-mock] settle tx submit failed:",
+          (err as Error).message,
+        );
+      }
+    }
     return bundleId;
   }
 

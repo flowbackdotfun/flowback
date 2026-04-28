@@ -27,14 +27,6 @@ pub mod flowback {
         initialize::handle_initialize(ctx, protocol_fee_bps, treasury, paused)
     }
 
-    pub fn settle_cashback(
-        ctx: Context<SettleCashback>,
-        bid_amount: u64,
-        user: Pubkey,
-    ) -> Result<()> {
-        settle_cashback::handle_settle_cashback(ctx, bid_amount, user)
-    }
-
     pub fn update_config(
         ctx: Context<UpdateConfig>,
         protocol_fee_bps: u16,
@@ -42,5 +34,26 @@ pub mod flowback {
         paused: bool,
     ) -> Result<()> {
         update_config::handle_update_config(ctx, protocol_fee_bps, treasury, paused)
+    }
+
+    pub fn escrow_init(ctx: Context<EscrowInit>) -> Result<()> {
+        escrow_init::handle_escrow_init(ctx)
+    }
+
+    pub fn escrow_deposit(ctx: Context<EscrowDeposit>, amount: u64) -> Result<()> {
+        escrow_deposit::handle_escrow_deposit(ctx, amount)
+    }
+
+    pub fn escrow_withdraw(ctx: Context<EscrowWithdraw>, amount: u64) -> Result<()> {
+        escrow_withdraw::handle_escrow_withdraw(ctx, amount)
+    }
+
+    pub fn settle_from_escrow(
+        ctx: Context<SettleFromEscrow>,
+        bid_amount: u64,
+        user: Pubkey,
+        hint_id: [u8; HINT_ID_LEN],
+    ) -> Result<()> {
+        settle_from_escrow::handle_settle_from_escrow(ctx, bid_amount, user, hint_id)
     }
 }

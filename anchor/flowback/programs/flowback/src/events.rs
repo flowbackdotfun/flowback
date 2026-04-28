@@ -9,3 +9,17 @@ pub struct CashbackSettled {
     pub protocol_fee: u64,
     pub timestamp: i64,
 }
+
+#[event]
+pub struct EscrowDeposited {
+    pub searcher: Pubkey,
+    pub amount: u64,
+    pub balance: u64,
+}
+
+#[event]
+pub struct EscrowWithdrawn {
+    pub searcher: Pubkey,
+    pub amount: u64,
+    pub balance: u64,
+}

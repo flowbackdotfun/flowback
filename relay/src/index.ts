@@ -6,6 +6,7 @@ import {
   createSolanaRpc,
   createSolanaRpcSubscriptions,
 } from "@solana/kit";
+import { Connection, Keypair } from "@solana/web3.js";
 
 import { AuctionManager } from "./auction/manager.js";
 import { ensureRelayDbSchema } from "./db/client.js";
@@ -25,6 +26,7 @@ const WS_PORT = Number(process.env.WS_PORT ?? 3002);
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "http://localhost:3000";
 
 const SOLANA_RPC_URL = requireEnv("SOLANA_RPC_URL");
+const SOLANA_RPC_WS_URL = requireEnv("SOLANA_RPC_WS_URL");
 const FLOWBACK_PROGRAM_ID = requireEnv("FLOWBACK_PROGRAM_ID");
 const TREASURY_WALLET = requireEnv("TREASURY_WALLET");
 
@@ -32,9 +34,9 @@ async function main(): Promise<void> {
   await ensureRelayDbSchema();
 
   const rpc = createSolanaRpc(SOLANA_RPC_URL);
-  const rpcSubscriptions = createSolanaRpcSubscriptions(
-    toWsUrl(SOLANA_RPC_URL),
-  );
+  const rpcSubscriptions = createSolanaRpcSubscriptions(SOLANA_RPC_WS_URL);
+  const connection = new Connection(SOLANA_RPC_URL, "confirmed");
+  const relayKeypair = loadRelayKeypair();
 
   const registry = new SearcherWsRegistry();
   const emitter = new UserStatusEmitter();
@@ -61,6 +63,8 @@ async function main(): Promise<void> {
       store: preparedSwaps,
       programId: FLOWBACK_PROGRAM_ID,
       treasury: TREASURY_WALLET,
+      relayKeypair,
+      connection,
       rpc,
     }),
   );
@@ -74,8 +78,6 @@ async function main(): Promise<void> {
   attachSearcherWs(wsApp, {
     auctionManager,
     registry,
-    programId: FLOWBACK_PROGRAM_ID,
-    treasury: TREASURY_WALLET,
   });
   attachUserStatusWs(wsApp, emitter);
   wsApp.listen(WS_PORT, (listenSocket) => {
@@ -99,10 +101,15 @@ function requireEnv(name: string): string {
   return v;
 }
 
-function toWsUrl(httpUrl: string): string {
-  if (httpUrl.startsWith("https://")) return "wss://" + httpUrl.slice(8);
-  if (httpUrl.startsWith("http://")) return "ws://" + httpUrl.slice(7);
-  return httpUrl;
+/**
+ * Load the relay's signing keypair from `RELAY_KEYPAIR` (Solana CLI JSON
+ * array, same format jito-ts's submitter accepts). Used to fee-pay and sign
+ * the on-chain settlement tx (Tx3).
+ */
+function loadRelayKeypair(): Keypair {
+  const raw = requireEnv("RELAY_KEYPAIR");
+  const bytes = Uint8Array.from(JSON.parse(raw) as number[]);
+  return Keypair.fromSecretKey(bytes);
 }
 
 main().catch((err) => {

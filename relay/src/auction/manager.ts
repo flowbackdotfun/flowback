@@ -73,6 +73,9 @@ export class AuctionManager {
       auctionDeadlineMs,
     };
     this.searcherRegistry.broadcast(hint);
+    console.log(
+      `[auction] open      hint=${hintId.slice(0, 8)}  bucket=${hint.sizeBucket}  impactBps=${hint.priceImpactBps}  windowMs=${this.auctionWindowMs}`,
+    );
 
     setTimeout(() => this.closeAuction(hintId), this.auctionWindowMs);
 
@@ -88,6 +91,9 @@ export class AuctionManager {
       throw new Error(`Auction ${hintId} is ${state.status}, not open`);
     }
     state.bids.push(bid);
+    console.log(
+      `[auction] bid       hint=${hintId.slice(0, 8)}  searcher=${bid.searcherPubkey.slice(0, 6)}…  amount=${bid.userCashbackLamports}  total=${state.bids.length}`,
+    );
   }
 
   getAuction(hintId: string): AuctionState | undefined {
@@ -104,6 +110,10 @@ export class AuctionManager {
       if (a.userCashbackLamports < b.userCashbackLamports) return 1;
       return a.receivedAt - b.receivedAt;
     });
+    const top = sorted[0];
+    console.log(
+      `[auction] close     hint=${hintId.slice(0, 8)}  bids=${sorted.length}  topBid=${top ? top.userCashbackLamports : "none"}`,
+    );
     state.resolve(sorted);
     this.auctions.delete(hintId);
   }
