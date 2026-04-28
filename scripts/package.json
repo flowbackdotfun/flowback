@@ -1,0 +1,24 @@
+{
+  "name": "@flowback/scripts",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "init": "tsx init-protocol.ts",
+    "searcher": "tsx searcher-bot.ts",
+    "intent": "tsx send-intent.ts",
+    "verify": "tsx verify-reimbursement.ts"
+  },
+  "dependencies": {
+    "@flowback/sdk": "file:../sdk",
+    "@solana/web3.js": "^1.98.4",
+    "bs58": "^6.0.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
+  }
+}
