@@ -15,7 +15,7 @@ import {
   decimalToRawAmount,
   deserializeTransaction,
   fetchQuote,
-  formatIntegerAmount,
+  formatLamports,
   formatRawTokenAmount,
   inputTokenForDirection,
   outputTokenForDirection,
@@ -40,8 +40,7 @@ const QUOTE_DEBOUNCE_MS = 350;
 const STATUS_TIMEOUT_MS = 90_000;
 const TOKEN_LOGO_URLS: Record<TokenSymbol, string> = {
   SOL: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/info/logo.png",
-  USDC:
-    "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/assets/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
+  USDC: "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/solana/assets/EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v/logo.png",
 };
 
 type QuoteState =
@@ -390,31 +389,36 @@ export function SwapCard({
     if (!publicKey) return;
 
     setBalances((current) => ({ ...current, loading: true }));
-    try {
-      const [solLamports, usdcAccounts] = await Promise.all([
-        connection.getBalance(publicKey, "confirmed"),
-        connection.getParsedTokenAccountsByOwner(publicKey, {
-          mint: new PublicKey(TOKENS.USDC.mint),
-        }),
-      ]);
+    const [solResult, usdcResult] = await Promise.allSettled([
+      connection.getBalance(publicKey, "confirmed"),
+      connection.getParsedTokenAccountsByOwner(
+        publicKey,
+        { mint: new PublicKey(TOKENS.USDC.mint) },
+        "confirmed",
+      ),
+    ]);
 
-      let usdcRaw = BigInt(0);
-      for (const account of usdcAccounts.value) {
+    const solRaw =
+      solResult.status === "fulfilled" ? solResult.value.toString() : null;
+
+    let usdcRaw: string | null = null;
+    if (usdcResult.status === "fulfilled") {
+      let total = BigInt(0);
+      for (const account of usdcResult.value.value) {
         const amount = (account.account.data as ParsedTokenAccount).parsed?.info
           ?.tokenAmount?.amount;
-        if (amount) usdcRaw += BigInt(amount);
+        if (amount) total += BigInt(amount);
       }
-
-      setBalances({
-        loading: false,
-        values: {
-          SOL: solLamports.toString(),
-          USDC: usdcRaw.toString(),
-        },
-      });
-    } catch {
-      setBalances({ loading: false, values: EMPTY_BALANCES });
+      usdcRaw = total.toString();
     }
+
+    setBalances({
+      loading: false,
+      values: {
+        SOL: solRaw,
+        USDC: usdcRaw,
+      },
+    });
   }, [connection, publicKey]);
 
   useEffect(() => {
@@ -496,18 +500,28 @@ export function SwapCard({
 
   function setMaxAmount() {
     const raw = balances.values[inputToken.symbol];
-    if (!raw) return;
-
-    const spendable =
-      inputToken.symbol === "SOL"
-        ? maxBigInt(BigInt(0), BigInt(raw) - SOL_FEE_RESERVE_LAMPORTS)
-        : BigInt(raw);
+    const spendable = getSpendableAmountRaw(raw, inputToken.symbol);
+    if (spendable === null) return;
 
     setAmountIn(
       rawToDecimalAmount(spendable, inputToken.decimals, inputToken.decimals),
     );
+    console.log(
+      "Value: ",
+      rawToDecimalAmount(spendable, inputToken.decimals, inputToken.decimals),
+    );
     setStatus(null);
   }
+
+  console.log({ wallet: publicKey?.toBase58(), rpc: connection.rpcEndpoint });
+
+  const canUseMax = useMemo(() => {
+    const spendable = getSpendableAmountRaw(
+      balances.values[inputToken.symbol],
+      inputToken.symbol,
+    );
+    return !balances.loading && spendable !== null && spendable > BigInt(0);
+  }, [balances.loading, balances.values, inputToken.symbol]);
 
   async function handleAction() {
     if (!connected) {
@@ -545,20 +559,19 @@ export function SwapCard({
       });
 
       const transaction = deserializeTransaction(prepared.unsignedTx);
-      setStatus({ tone: "info", message: "Simulating transaction..." });
+      setStatus({ tone: "info", message: "Approve the swap in your wallet." });
+      const signed = await signTransaction(transaction);
 
-      const simulation = await connection.simulateTransaction(transaction, {
+      setStatus({ tone: "info", message: "Simulating transaction..." });
+      const simulation = await connection.simulateTransaction(signed, {
         commitment: "processed",
         replaceRecentBlockhash: false,
-        sigVerify: false,
+        sigVerify: true,
       });
 
       if (simulation.value.err) {
         throw new Error("Simulation failed. Refresh the quote and try again.");
       }
-
-      setStatus({ tone: "info", message: "Approve the swap in your wallet." });
-      const signed = await signTransaction(transaction);
 
       setStatus({ tone: "info", message: "Submitting intent..." });
       const intent = await submitIntent({
@@ -634,7 +647,7 @@ export function SwapCard({
         <div className="swap-card">
           <div className="swap-head">
             <h3>Swap</h3>
-            <span className="eyebrow-live">Mainnet · live</span>
+            {/* <span className="eyebrow-live">Mainnet · live</span> */}
           </div>
 
           <div className="swap-rows" data-flipping={flipping}>
@@ -662,23 +675,21 @@ export function SwapCard({
               <div className="foot">
                 <span>
                   Balance:{" "}
-                  {formatBalanceLabel(
-                    connected,
-                    balances,
-                    inputToken.symbol,
-                  )}
+                  {formatBalanceLabel(connected, balances, inputToken.symbol)}
                 </span>
                 {connected ? (
                   <button
                     className="max-btn"
-                    disabled={!balances.values[inputToken.symbol]}
+                    disabled={!canUseMax}
                     onClick={setMaxAmount}
                     type="button"
                   >
                     Max
                   </button>
                 ) : (
-                  <span>{quoteState.status === "ready" ? "Quote ready" : ""}</span>
+                  <span>
+                    {quoteState.status === "ready" ? "Quote ready" : ""}
+                  </span>
                 )}
               </div>
             </div>
@@ -726,11 +737,7 @@ export function SwapCard({
               <div className="foot">
                 <span>
                   Balance:{" "}
-                  {formatBalanceLabel(
-                    connected,
-                    balances,
-                    outputToken.symbol,
-                  )}
+                  {formatBalanceLabel(connected, balances, outputToken.symbol)}
                 </span>
                 <span>{getQuoteFootnote(quoteState)}</span>
               </div>
@@ -850,11 +857,12 @@ function getCashbackLabel(
   if (status === "loading") return "Estimating";
   if (status === "error") return "Unavailable";
   if (!cashbackLamports) return "—";
+  const cashbackSol = formatLamports(cashbackLamports);
 
   return (
     <>
-      ≈ {formatIntegerAmount(cashbackLamports)}
-      <span className="u">lamports</span>
+      ≈ {cashbackSol}
+      <span className="u">SOL</span>
     </>
   );
 }
@@ -879,4 +887,20 @@ function getErrorMessage(error: unknown, fallback: string) {
 
 function maxBigInt(a: bigint, b: bigint) {
   return a > b ? a : b;
+}
+
+function getSpendableAmountRaw(
+  raw: string | null,
+  token: TokenSymbol,
+): bigint | null {
+  if (!raw) return null;
+  try {
+    const value = BigInt(raw);
+    if (token === "SOL") {
+      return maxBigInt(BigInt(0), value - SOL_FEE_RESERVE_LAMPORTS);
+    }
+    return value;
+  } catch {
+    return null;
+  }
 }

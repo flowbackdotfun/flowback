@@ -247,6 +247,11 @@ p {
   position: relative;
   white-space: nowrap;
 }
+
+.nav-button {
+  color: var(--bg) !important;
+}
+
 .btn:active {
   transform: translateY(1px);
 }

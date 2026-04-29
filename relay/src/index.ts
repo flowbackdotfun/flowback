@@ -54,7 +54,7 @@ async function main(): Promise<void> {
     });
   });
   httpApp.use(createQuoteRoutes());
-  httpApp.use(createPrepareRoutes({ store: preparedSwaps }));
+  httpApp.use(createPrepareRoutes({ store: preparedSwaps, connection }));
   httpApp.use(
     createIntentRoutes({
       auctionManager,

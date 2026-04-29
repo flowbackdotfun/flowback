@@ -12,6 +12,8 @@ type NavProps = {
   onToggleTheme: () => void;
 };
 
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3001";
+
 export function Nav({ onToggleTheme, theme }: NavProps) {
   const pathname = usePathname();
   const { connected, publicKey, disconnect, wallets, select } = useWallet();
@@ -75,6 +77,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               <a href="#searchers">Searchers</a>
               <a href="#compare">Compare</a>
               <a href="#faq">FAQ</a>
+              <a href={DOCS_URL}>Docs</a>
             </>
           ) : null}
         </div>
@@ -107,10 +110,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               )}
             </button>
           ) : (
-            <Link
-              href="/swap"
-              className="btn btn-primary btn-sm launch-full"
-            >
+            <Link href="/swap" className="btn btn-primary btn-sm launch-full">
               Launch App <Icon.Arrow />
             </Link>
           )}
@@ -145,6 +145,9 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               <a href="#faq" onClick={close}>
                 FAQ
               </a>
+              <a href={DOCS_URL} onClick={close}>
+                Docs
+              </a>
             </>
           ) : null}
           {onSwapPage ? (
@@ -172,7 +175,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           ) : (
             <Link
               href="/swap"
-              className="btn btn-primary btn-sm launch-full"
+              className="btn btn-primary btn-sm nav-button"
               onClick={close}
             >
               Launch App <Icon.Arrow />

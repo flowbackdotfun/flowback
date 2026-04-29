@@ -1,7 +1,6 @@
 import {
   address,
   getAddressEncoder,
-  getBase64Encoder,
   getTransactionDecoder,
   signatureBytes as toSignatureBytes,
   verifySignature,
@@ -25,6 +24,8 @@ import type { UserStatusEmitter } from "../ws/user.js";
 import { PreparedSwapStore, type PreparedSwap } from "./prepare-store.js";
 
 type Db = typeof defaultDb;
+const ENFORCE_STRICT_PREPARED_MESSAGE_MATCH = process.env.MOCK_JUPITER !== "true";
+const ENABLE_INTENT_DEBUG_LOGS = process.env.MOCK_JUPITER === "true";
 
 export class UnknownPrepareIdError extends Error {
   constructor() {
@@ -91,10 +92,25 @@ export async function submitIntent(
   input: SubmitIntentInput,
   deps: IntentServiceDeps,
 ): Promise<SubmitIntentResult> {
+  if (ENABLE_INTENT_DEBUG_LOGS) {
+    console.log("[intent] received", {
+      prepareId: input.prepareId,
+      signedTxBase64Len: input.signedTx.length,
+    });
+  }
+
   const prepared = deps.store.take(input.prepareId);
   if (!prepared) throw new UnknownPrepareIdError();
 
-  const signedTxBytes = base64Encoder.encode(input.signedTx);
+  const signedTxBytes = Uint8Array.from(Buffer.from(input.signedTx, "base64"));
+  if (ENABLE_INTENT_DEBUG_LOGS) {
+    console.log("[intent] decoded signedTx bytes", {
+      prepareId: input.prepareId,
+      signedTxBytesLen: signedTxBytes.length,
+      preparedUnsignedTxBase64Len: prepared.unsignedTxBase64.length,
+    });
+  }
+
   let signedMessageBytes: Uint8Array;
   let userSignatureBytes: Uint8Array;
   try {
@@ -104,15 +120,47 @@ export async function submitIntent(
     if (!sig) throw new InvalidSignatureError();
     userSignatureBytes = new Uint8Array(sig);
   } catch (err) {
+    if (ENABLE_INTENT_DEBUG_LOGS) {
+      console.error("[intent] failed to decode/inspect signed transaction", {
+        prepareId: input.prepareId,
+        err,
+      });
+    }
     if (err instanceof InvalidSignatureError) throw err;
     throw new InvalidSignatureError();
   }
 
   if (!bytesEqual(signedMessageBytes, prepared.messageBytes)) {
-    throw new SignedTxMismatchError();
+    if (ENABLE_INTENT_DEBUG_LOGS) {
+      console.error("[intent] signed_tx_mismatch", {
+        prepareId: input.prepareId,
+        preparedMessageLen: prepared.messageBytes.length,
+        signedMessageLen: signedMessageBytes.length,
+        preparedPrefixHex: toHexPrefix(prepared.messageBytes, 32),
+        signedPrefixHex: toHexPrefix(signedMessageBytes, 32),
+        preparedSuffixHex: toHexSuffix(prepared.messageBytes, 32),
+        signedSuffixHex: toHexSuffix(signedMessageBytes, 32),
+      });
+    }
+
+    if (ENFORCE_STRICT_PREPARED_MESSAGE_MATCH) {
+      throw new SignedTxMismatchError();
+    }
+
+    if (ENABLE_INTENT_DEBUG_LOGS) {
+      console.warn("[intent] skipping strict message match (MOCK_JUPITER=true)");
+    }
   }
 
   if (!(await verifyUserSignature(prepared.user, userSignatureBytes, signedMessageBytes))) {
+    if (ENABLE_INTENT_DEBUG_LOGS) {
+      console.error("[intent] invalid_signature", {
+        prepareId: input.prepareId,
+        user: prepared.user,
+        signatureLen: userSignatureBytes.length,
+        messageLen: signedMessageBytes.length,
+      });
+    }
     throw new InvalidSignatureError();
   }
 
@@ -237,8 +285,6 @@ function toAuctionStatus(
   return "failed";
 }
 
-const base64Encoder = getBase64Encoder();
-
 async function verifyUserSignature(
   userPubkey: string,
   signature: Uint8Array,
@@ -269,4 +315,13 @@ function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
   return true;
+}
+
+function toHexPrefix(bytes: Uint8Array, count: number): string {
+  return Buffer.from(bytes.slice(0, count)).toString("hex");
+}
+
+function toHexSuffix(bytes: Uint8Array, count: number): string {
+  const start = Math.max(0, bytes.length - count);
+  return Buffer.from(bytes.slice(start)).toString("hex");
 }

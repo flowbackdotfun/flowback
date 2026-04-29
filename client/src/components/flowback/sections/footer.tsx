@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { BrandMark } from "../icons";
 
 export function Footer() {
@@ -19,6 +20,13 @@ export function Footer() {
             </span>
           </div>
           <div className="footer-links">
+            <Link
+              href={
+                process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3001/docs"
+              }
+            >
+              Docs
+            </Link>
             <a href="https://github.com/flowbackdotfun/flowback">GitHub</a>
             <a href="https://x.com/flowbackdotfun" target="_blank">
               X / Twitter

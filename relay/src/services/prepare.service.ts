@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { Connection } from "@solana/web3.js";
 import {
   AccountRole,
   address,
@@ -33,6 +34,7 @@ export { JupiterUnavailableError } from "./errors.js";
 const JITO_DONT_FRONT_ADDRESS = address(
   "jitodontfront111111111111111111111111111111",
 );
+const MEMO_PROGRAM_ID = address("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
 
 // Client has 30s to sign + submit /intent. Jupiter's blockhash typically lives
 // 60-90s, leaving headroom for auction + bundle land.
@@ -42,6 +44,7 @@ const MAX_SLIPPAGE_BPS = 10_000;
 
 export interface PrepareServiceDeps {
   store: PreparedSwapStore;
+  connection: Connection;
 }
 
 export interface PrepareSwapInput {
@@ -97,16 +100,15 @@ export async function prepareSwap(
   }
 
   const userAddress = address(input.user);
+  const latestBlockhash = await deps.connection.getLatestBlockhash("confirmed");
   const message = pipe(
     createTransactionMessage({ version: 0 }),
     (m) => setTransactionMessageFeePayer(userAddress, m),
     (m) =>
       setTransactionMessageLifetimeUsingBlockhash(
         {
-          blockhash: build.blockhashWithMetadata.blockhash as Blockhash,
-          lastValidBlockHeight: BigInt(
-            build.blockhashWithMetadata.lastValidBlockHeight,
-          ),
+          blockhash: latestBlockhash.blockhash as Blockhash,
+          lastValidBlockHeight: BigInt(latestBlockhash.lastValidBlockHeight),
         },
         m,
       ),
@@ -147,6 +149,13 @@ export async function prepareSwap(
 }
 
 function withFrontRunGuard(swapIx: Instruction): Instruction {
+  // In MOCK_JUPITER, swapIx is a Memo instruction. Memo enforces that all
+  // provided accounts are signers, so appending jito-dont-front (readonly,
+  // non-signer) causes MissingRequiredSignature during simulation.
+  if (swapIx.programAddress === MEMO_PROGRAM_ID) {
+    return swapIx;
+  }
+
   return {
     ...swapIx,
     accounts: [
