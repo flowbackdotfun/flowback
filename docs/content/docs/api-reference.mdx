@@ -1,0 +1,453 @@
+---
+title: API reference
+description: Every export from `@flowback/searcher` — signatures, parameters, return types, and short examples.
+---
+
+The full public surface of `@flowback/searcher`. Every signature here is lifted directly from the SDK source so it cannot drift from the package you install.
+
+For *how* these pieces compose, see [Quick start](/quick-start). For *why* they exist, see [How it works](/how-it-works).
+
+## `FlowbackSearcher`
+
+The high-level WebSocket client. One instance per searcher pubkey.
+
+```ts
+new FlowbackSearcher(config: ClientConfig)
+```
+
+```ts
+interface ClientConfig {
+  relayUrl: string;     // e.g. "wss://relay.flowback.fun/searcher"
+  signer: Signer;
+  programId: string;    // base58 FlowBack program id
+  rpcUrl: string;       // Solana JSON-RPC URL (used for getLatestBlockhash)
+  tipAccounts?: string[]; // optional override of Jito tip accounts
+}
+```
+
+### `connect()`
+
+```ts
+connect(): Promise<void>
+```
+
+Opens the WebSocket, builds and sends the auth message, resolves on `auth_ok`.
+
+- Rejects with `auth timeout` after **5 s**.
+- Rejects with `auth failed: ...` if the relay returns anything other than `auth_ok`.
+- Resets the reconnect backoff counter.
+
+```ts
+await searcher.connect();
+```
+
+### `disconnect()`
+
+```ts
+disconnect(): void
+```
+
+Closes the socket cleanly with code `1000`. After this, `onDisconnect` fires once and **no reconnect is attempted**.
+
+### `submitBid(bid)`
+
+```ts
+submitBid(bid: BidInput): Promise<void>
+```
+
+Sends a bid envelope over the WebSocket. Resolves on `bid_accepted` for the matching `hintId`, rejects on `bid_rejected: <reason>` or `bid ack timeout` (5 s).
+
+```ts
+interface BidInput {
+  hintId: string;
+  userCashbackLamports: bigint;  // must equal bidAmount in the commitment
+  jitoTipLamports: bigint;
+  backrunTx: string;             // base64-serialised, fully-signed Tx2
+  tipTx: string;                 // base64-serialised, fully-signed Tx4
+  bidCommitmentSig: string;      // base58 Ed25519 sig from signBidCommitment
+}
+```
+
+```ts
+await searcher.submitBid({
+  hintId: hint.hintId,
+  userCashbackLamports: 5_000_000n,
+  jitoTipLamports: 10_000n,
+  backrunTx,
+  tipTx,
+  bidCommitmentSig,
+});
+```
+
+### `getRecentBlockhash()`
+
+```ts
+getRecentBlockhash(): Promise<string>
+```
+
+Convenience wrapper around `Connection.getLatestBlockhash("confirmed")` against the configured `rpcUrl`. Use it when building tip/escrow transactions.
+
+### Event hooks
+
+```ts
+searcher.onHint((hint: SearcherHint) => void | Promise<void>): void
+searcher.onAuctionResult((result: AuctionResult) => void): void
+searcher.onError((err: Error) => void): void
+searcher.onDisconnect(() => void): void
+```
+
+`onHint` fires for every auction the relay broadcasts. `onAuctionResult` fires for every hint you submitted a bid against. `onError` fires on transport errors and on relay-emitted `error` envelopes. `onDisconnect` fires once per drop (auto-reconnect resumes unless you called `disconnect()`).
+
+<Callout type="info">
+  Bid acks (`bid_accepted` / `bid_rejected`) are surfaced through `submitBid()`'s
+  promise — there are no separate `onBidAccepted` / `onBidRejected` hooks.
+</Callout>
+
+## Signers
+
+### `Signer`
+
+```ts
+interface Signer {
+  publicKey: PublicKey;
+  signMessage(bytes: Uint8Array): Promise<Uint8Array>; // raw Ed25519
+  signTransaction<T extends { partialSign: (...keys: any[]) => void }>(
+    tx: T,
+  ): Promise<T>;
+}
+```
+
+Implement this for KMS / HSM / hardware wallet flows.
+
+### `keypairSigner(keypair)`
+
+```ts
+keypairSigner(keypair: Keypair): Signer
+```
+
+Wraps a `@solana/web3.js` `Keypair` as a `Signer`. The secret key never leaves your process.
+
+```ts
+import { Keypair } from "@solana/web3.js";
+import { keypairSigner } from "@flowback/searcher";
+
+const signer = keypairSigner(Keypair.generate());
+```
+
+## Builders
+
+### `buildAuthMessage(signer, timestamp?)`
+
+```ts
+buildAuthMessage(
+  signer: Signer,
+  timestamp?: number,
+): Promise<AuthMessage>
+```
+
+Returns `{ type: "auth", pubkey, signature, timestamp }`. Normally `connect()` calls this internally. This is mainly useful if you proxy the WS through your own service.
+
+The message body is `flowback-searcher-auth:<base58 pubkey>:<unix-ms timestamp>`. The relay rejects timestamps drifting more than ±60 s from its clock.
+
+### `signBidCommitment({ signer, hintId, bidAmount })`
+
+```ts
+signBidCommitment(params: {
+  signer: Signer;
+  hintId: string;
+  bidAmount: bigint;
+}): Promise<string>
+```
+
+Signs `flowback-bid:<lowercase 32-char hex hintId>:<decimal bidAmount>` and returns the base58 Ed25519 signature.
+
+The SDK strips dashes from UUID-shaped hint ids so the byte representation matches the program's `build_bid_message` byte-for-byte. Do not roll your own — even off-by-one whitespace or casing breaks settlement.
+
+```ts
+const sig = await signBidCommitment({
+  signer,
+  hintId: hint.hintId,
+  bidAmount: 5_000_000n,
+});
+```
+
+### `buildBidMessage(hintId, bidAmount)`
+
+```ts
+buildBidMessage(hintId: string, bidAmount: bigint): string
+```
+
+The plain string form of the bid commitment. It is exposed for debugging and offline-signing flows. Most users want `signBidCommitment` instead.
+
+### `buildEscrowInitTx`
+
+```ts
+buildEscrowInitTx(params: {
+  signer: Signer;
+  programId: string;
+  recentBlockhash: string;
+}): Promise<string>
+```
+
+Returns a base64 wire-format signed tx that allocates the searcher's `SearcherEscrow` PDA. Run **once** per searcher pubkey. Re-running after the PDA exists fails with Anchor's `init` constraint.
+
+### `buildEscrowDepositTx`
+
+```ts
+buildEscrowDepositTx(params: {
+  signer: Signer;
+  programId: string;
+  recentBlockhash: string;
+  amount: bigint;             // lamports to add
+}): Promise<string>
+```
+
+Transfers `amount` lamports from the searcher into their escrow PDA via a `SystemProgram` CPI inside the FlowBack program.
+
+### `buildEscrowWithdrawTx`
+
+```ts
+buildEscrowWithdrawTx(params: {
+  signer: Signer;
+  programId: string;
+  recentBlockhash: string;
+  amount: bigint;             // lamports to pull out
+}): Promise<string>
+```
+
+Pulls `amount` lamports from the escrow PDA back to the searcher's wallet. The program enforces rent-exemption — over-withdrawing fails with `RentBreach` / `InsufficientEscrow`.
+
+### `buildJitoTipTx`
+
+```ts
+buildJitoTipTx(params: {
+  signer: Signer;
+  tipAccount: string;         // base58 — pick with pickJitoTipAccount()
+  tipLamports: bigint;
+  recentBlockhash: string;
+}): Promise<string>
+```
+
+Builds, signs, and base64-serialises a single-instruction `SystemProgram.transfer` from `signer.publicKey` to `tipAccount`. This is **Tx4** of the bundle.
+
+```ts
+const tipTx = await buildJitoTipTx({
+  signer,
+  tipAccount: pickJitoTipAccount(),
+  tipLamports: 10_000n,
+  recentBlockhash: await searcher.getRecentBlockhash(),
+});
+```
+
+## Jito tip accounts
+
+### `JITO_TIP_ACCOUNTS`
+
+```ts
+const JITO_TIP_ACCOUNTS: readonly string[]
+```
+
+Hardcoded snapshot of the eight mainnet Jito tip accounts captured from `getTipAccounts`. Used as a zero-network default by `pickJitoTipAccount`.
+
+### `DEFAULT_JITO_BLOCK_ENGINE_URL`
+
+```ts
+const DEFAULT_JITO_BLOCK_ENGINE_URL =
+  "https://mainnet.block-engine.jito.wtf/api/v1";
+```
+
+### `fetchJitoTipAccounts(options?)`
+
+```ts
+fetchJitoTipAccounts(options?: {
+  endpoint?: string;
+  signal?: AbortSignal;
+}): Promise<string[]>
+```
+
+Calls `getTipAccounts` against the Block Engine. Throws on transport or RPC error — the caller decides whether to fall back to `JITO_TIP_ACCOUNTS`.
+
+```ts
+const fresh = await fetchJitoTipAccounts({
+  signal: AbortSignal.timeout(2_000),
+});
+```
+
+### `pickJitoTipAccount(pool?)`
+
+```ts
+pickJitoTipAccount(pool?: readonly string[]): string
+```
+
+Random pick. Defaults to `JITO_TIP_ACCOUNTS`. Long-running bots: refresh `pool` periodically with `fetchJitoTipAccounts`.
+
+## PDAs and discriminators
+
+For tx builders rolling outside the SDK.
+
+### Seeds
+
+```ts
+const CONFIG_SEED: Buffer       // "config"
+const ESCROW_SEED: Buffer       // "escrow"
+const USED_HINT_SEED: Buffer    // "used_hint"
+```
+
+### Anchor instruction discriminators
+
+```ts
+const ESCROW_INIT_DISCRIMINATOR: Uint8Array
+const ESCROW_DEPOSIT_DISCRIMINATOR: Uint8Array
+const ESCROW_WITHDRAW_DISCRIMINATOR: Uint8Array
+const SETTLE_FROM_ESCROW_DISCRIMINATOR: Uint8Array
+```
+
+The first 8 bytes of `sha256("global:<ix_name>")`. Hardcoded so the SDK has zero runtime dependency on the IDL or an Anchor client.
+
+### `deriveConfigPda(programId)`
+
+```ts
+deriveConfigPda(programId: PublicKey): [PublicKey, number]
+```
+
+Derives the per-program `ProtocolConfig` PDA. Returns `[pda, bump]`.
+
+### `deriveEscrowPda(programId, searcher)`
+
+```ts
+deriveEscrowPda(
+  programId: PublicKey,
+  searcher: PublicKey,
+): [PublicKey, number]
+```
+
+Derives the per-searcher `SearcherEscrow` PDA. Returns `[pda, bump]`.
+
+```ts
+import { PublicKey } from "@solana/web3.js";
+import { deriveEscrowPda } from "@flowback/searcher";
+
+const [pda] = deriveEscrowPda(
+  new PublicKey(process.env.FLOWBACK_PROGRAM_ID!),
+  keypair.publicKey,
+);
+```
+
+## Types
+
+### `SearcherHint`
+
+```ts
+interface SearcherHint {
+  hintId: string;              // UUID
+  tokenPair: TokenPair;
+  sizeBucket: SizeBucket;
+  priceImpactBps: number;
+  auctionDeadlineMs: number;   // unix ms
+}
+```
+
+The hint payload broadcast by the relay. Deliberately omits the user pubkey and exact swap size.
+
+### `TokenPair`
+
+```ts
+interface TokenPair {
+  inputMint: string;
+  outputMint: string;
+}
+```
+
+### `SizeBucket`
+
+```ts
+type SizeBucket = "small" | "medium" | "large" | "whale";
+```
+
+Coarse classification. Use it to gauge profitability without learning exact size.
+
+### `AuctionResult`
+
+```ts
+interface AuctionResult {
+  hintId: string;
+  won: boolean;
+  yourBid: bigint;
+  winningBid: bigint | null;   // null when no one bid
+}
+```
+
+### `BidInput`
+
+```ts
+interface BidInput {
+  hintId: string;
+  userCashbackLamports: bigint;
+  jitoTipLamports: bigint;
+  backrunTx: string;           // base64
+  tipTx: string;               // base64
+  bidCommitmentSig: string;    // base58 Ed25519
+}
+```
+
+### `BidWireMessage`
+
+```ts
+interface BidWireMessage {
+  type: "bid";
+  hintId: string;
+  userCashbackLamports: string;  // decimal string on the wire
+  jitoTipLamports: string;
+  backrunTx: string;
+  tipTx: string;
+  bidCommitmentSig: string;
+}
+```
+
+The exact JSON shape sent over the WebSocket. `submitBid` produces this for you.
+
+### `AuthMessage`
+
+```ts
+interface AuthMessage {
+  type: "auth";
+  pubkey: string;       // base58
+  signature: string;    // base58 Ed25519
+  timestamp: number;    // unix ms
+}
+```
+
+### `ServerMessage`
+
+```ts
+type ServerMessage =
+  | { type: "auth_ok" }
+  | { type: "bid_accepted"; hintId: string }
+  | { type: "bid_rejected"; hintId: string; reason: string }
+  | {
+      type: "hint";
+      hintId: string;
+      tokenPair: TokenPair;
+      sizeBucket: SizeBucket;
+      priceImpactBps: number;
+      auctionDeadlineMs: number;
+    }
+  | {
+      type: "auction_result";
+      hintId: string;
+      won: boolean;
+      yourBid: string;
+      winningBid: string | null;
+    }
+  | { type: "error"; reason: string };
+```
+
+The discriminated union of every message the relay can send. `FlowbackSearcher` parses these for you — exposed for users implementing custom transport.
+
+### `ClientConfig`
+
+See [`new FlowbackSearcher(config)`](#flowbacksearcher).
+
+### `Signer`
+
+See [Signer](#signer).

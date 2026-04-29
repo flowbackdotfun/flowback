@@ -1,0 +1,140 @@
+---
+title: How it works
+description: The FlowBack auction lifecycle, the 4-transaction Jito bundle, the privacy model, and the on-chain escrow that settles cashback.
+---
+
+This page explains what happens around your `submitBid` call — what the relay does, why the bundle has four transactions, and why your wallet pubkey is the only signer in the searcher leg. Read it once before integrating. You'll write much better bid logic for it.
+
+## The auction lifecycle
+
+<Mermaid
+  chart={`sequenceDiagram
+    participant User
+    participant Relay
+    participant Searcher as Searcher (you)
+    participant Escrow as SearcherEscrow PDA
+    participant Program as FlowBack program
+    participant Treasury as Protocol treasury
+    participant Jito as Jito Block Engine
+    User->>Relay: submit swap intent
+    Relay->>Searcher: hint { hintId, tokenPair, sizeBucket, priceImpactBps, auctionDeadlineMs }
+    Searcher->>Searcher: sign bid commitment (off-chain)
+    Searcher->>Searcher: build backrun tx + Jito tip tx
+    Searcher->>Relay: bid { bidCommitmentSig, backrunTx, tipTx, ... }
+    Note over Relay: 200 ms auction window closes
+    Relay->>Searcher: auction_result { won }
+    Relay->>Program: settle_from_escrow (Tx3, with Ed25519 sigverify)
+    Relay->>Jito: bundle [Tx1 swap, Tx2 backrun, Tx3 settle, Tx4 tip]
+    Jito->>Program: bundle lands on-chain
+    Escrow->>Program: debit winning bid + reimbursement
+    Program->>User: 90% of winning bid as SOL cashback
+    Program->>Relay: relay reimbursement + UsedHint rent
+    Program->>Treasury: 10% of winning bid to protocol treasury`}
+/>
+
+A swap intent kicks off a **200 ms** sealed-bid auction. Every authenticated searcher receives the same hint at the same time. The hint contains *just enough* information to evaluate profitability without leaking the user's identity or exact size — see [Privacy model](#privacy-model) below.
+
+The relay picks the winner by highest `userCashbackLamports`, then sends an `auction_result` back to every bidder.
+
+## The 4-transaction bundle
+
+The relay assembles a Jito bundle of **four** transactions and submits it to the Block Engine:
+
+| Index | Transaction       | Built & signed by | Purpose                                          |
+|-------|-------------------|-------------------|--------------------------------------------------|
+| Tx1   | User swap         | Relay (with the user's signature on the original intent) | Routes through Jupiter, lands the user's swap. |
+| Tx2   | Searcher backrun  | **Searcher (you)**| Your profit-extracting transaction.              |
+| Tx3   | `settle_from_escrow` | Relay        | Calls the FlowBack program; debits your escrow, credits user + treasury, reimburses relay tx fee + UsedHint rent. |
+| Tx4   | Jito tip          | **Searcher (you)**| `SystemProgram.transfer` to a Jito tip account. Required for the bundle to be routed. |
+
+You build **Tx2 and Tx4**. The SDK gives you [`buildJitoTipTx`](/api-reference#buildjitotiptx) for Tx4. Tx2 is your own logic. The relay builds Tx1 and Tx3.
+
+<Callout type="warn">
+  The Jito tip (Tx4) is **separate** from your bid amount (`userCashbackLamports`). Bids settle from your on-chain escrow PDA via Tx3. The tip is a `SystemProgram.transfer` from your wallet that funds Jito. They are independent.
+</Callout>
+
+## Privacy model
+
+FlowBack is engineered so the **user's wallet pubkey never reaches the searcher**, in any phase, won or lost.
+
+- **Hints** contain only `tokenPair`, `sizeBucket` (`small` / `medium` / `large` / `whale`), `priceImpactBps`, and the auction deadline. No user pubkey, no exact amount.
+- **Your bid** carries a tiny off-chain Ed25519 signature over `flowback-bid:<hintId>:<bidAmount>` — you do **not** sign a Solana transaction against the user's accounts.
+- **Tx3 (settle) is built and signed by the relay**, not you. The relay knows the user from the original intent. Your economic commitment to pay is enforced on-chain by the FlowBack program verifying your off-chain signature via Solana's Ed25519 sigverify precompile (`Sysvar::Instructions` introspection).
+- Your cashback lamports come from your **per-searcher escrow PDA** that you pre-funded — the program debits the escrow without needing your signature on Tx3 directly.
+
+This is structurally stronger than ETH MEV-Share: there, the user's pubkey is leaked at relay-level even when the searcher's view is filtered. Here it's never observable to the searcher's process at all.
+
+## Bid commitment
+
+The searcher signs:
+
+```
+flowback-bid:<lowercase 32-char hex hintId>:<decimal bidAmount>
+```
+
+Hint IDs are UUIDs. The SDK strips dashes before encoding so the byte representation matches the program's `build_bid_message` byte-for-byte. Use [`signBidCommitment`](/api-reference#signbidcommitment) — never roll your own.
+
+The signature travels in the WebSocket bid envelope. Later, when the relay constructs Tx3, it embeds your signature into a Solana **Ed25519 sigverify instruction**. The FlowBack program reads that instruction via `Sysvar::Instructions` and refuses to settle if the signature, the message bytes, or the bid amount do not match.
+
+<Callout type="warn">
+  `bidAmount` in the message **must equal** `userCashbackLamports` in your bid envelope. A mismatch causes on-chain settlement to fail with `BidMismatch`, and you forfeit auction priority for that hint.
+</Callout>
+
+## Escrow model
+
+Every searcher keeps a SOL balance in a program-owned PDA:
+
+```
+SearcherEscrow PDA = derive(["escrow", searcher.pubkey], programId)
+```
+
+When you win an auction, the program:
+
+- debits your escrow by **`bidAmount + reimbursement`**
+- credits the user with **90%** of `bidAmount`
+- credits the protocol treasury with **10%** of `bidAmount`
+- reimburses the relay's tx fee + `UsedHint` rent (≈10,000 lamports + rent)
+
+The program also enforces rent-exemption on withdrawal — over-withdrawing fails with `RentBreach` / `InsufficientEscrow`.
+
+Manage your escrow with:
+
+- [`buildEscrowInitTx`](/api-reference#buildescrowinittx) — once per searcher
+- [`buildEscrowDepositTx`](/api-reference#buildescrowdeposittx) — top up
+- [`buildEscrowWithdrawTx`](/api-reference#buildescrowwithdrawtx) — pull idle balance
+
+## Auth & connection lifecycle
+
+When you call `searcher.connect()`, the SDK:
+
+1. Opens a WebSocket to `relayUrl`.
+2. Builds an auth message: `flowback-searcher-auth:<base58 pubkey>:<unix-ms timestamp>`.
+3. Signs it with your `Signer` and sends `{ type: "auth", pubkey, signature, timestamp }`.
+4. Waits up to **5 s** for `auth_ok`. Rejects on timeout, transport error, or any non-`auth_ok` reply.
+
+<Callout type="warn">
+  The relay rejects auth timestamps drifting **more than 60 s** from its clock. Make sure your host clock is roughly NTP-correct.
+</Callout>
+
+After auth, the SDK auto-reconnects on drops with **exponential backoff** (1 s → 30 s cap). Each reconnect re-authenticates. Pending bid acks are rejected with `connection closed` when the socket drops.
+
+## Failure modes
+
+| Symptom                        | Most likely cause                                                                 |
+|--------------------------------|-----------------------------------------------------------------------------------|
+| `auth timeout`                 | Relay unreachable, or your `Signer` is too slow.                                  |
+| `auth failed: ...`             | Clock skew >60 s, or pubkey not allowlisted by the relay (deployment-dependent).  |
+| `bid rejected: ...`            | `bidCommitmentSig` doesn't match `userCashbackLamports`, or you missed the deadline. |
+| `bid ack timeout`              | Relay didn't respond within 5 s. Hint is probably already settled.                |
+| `RentBreach` / `InsufficientEscrow` on settle | Escrow can't cover `bidAmount + reimbursement`. Top up. |
+
+## What the SDK does not do
+
+The SDK is **not** a full searcher framework. It does not:
+
+- Build your backrun transaction — that's your edge.
+- Compute optimal bid size — you decide based on `priceImpactBps` and your strategy.
+- Stream Jupiter or DEX state — bring your own quote source.
+- Submit bundles to Jito — the relay does that after the auction closes.
+
+For an end-to-end reference implementation, see `seed-bot/src/index.ts` in the FlowBack monorepo.

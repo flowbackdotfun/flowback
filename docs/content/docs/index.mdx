@@ -1,0 +1,116 @@
+---
+title: Introduction
+description: FlowBack is Solana's MEV-Share platform for user cashback and private orderflow for searchers.
+---
+
+`@flowback/searcher` is the searcher-facing TypeScript SDK. It lets searchers connect to FlowBack private orderflow, submit lamport-denominated bids for backrun rights, and capture backrun profit when they win. Searchers bid a share of expected profit, and the highest valid bid wins the exclusive right to backrun that swap.
+
+This page tells you what the SDK does and gives you a 60-second peek at the searcher loop. To integrate it step-by-step, jump to **[Quick start](/quick-start)**. To understand the protocol underneath, read **[How it works](/how-it-works)**.
+
+## What the SDK does
+
+In one sentence: it lets a searcher **connect → receive hints → bid → win → land a Jito bundle that pays the user**.
+
+Concretely:
+
+- Opens an authenticated WebSocket to the relay's `/searcher` endpoint
+- Streams typed `SearcherHint` events (token pair, coarse size bucket, price-impact estimate, auction deadline)
+- Signs the off-chain bid commitment (`flowback-bid:<hintId>:<bidAmount>`) with your `Signer`
+- Builds the searcher-side transactions: backrun (your logic) and the Jito tip leg
+- Submits the bid over WebSocket and resolves on `bid_accepted`
+- Manages the searcher's on-chain SOL escrow PDA — `init`, `deposit`, `withdraw`
+
+The SDK **never sees your private key**. It accepts a `Signer` interface, so a `Keypair`, KMS, or hardware wallet all work.
+
+## Install
+
+```bash
+pnpm add @flowback/searcher
+```
+
+Requires Node 18+.
+
+## 60-second example
+
+```ts
+import { Keypair } from "@solana/web3.js";
+import {
+  FlowbackSearcher,
+  keypairSigner,
+  signBidCommitment,
+  buildJitoTipTx,
+  pickJitoTipAccount,
+} from "@flowback/searcher";
+
+const keypair = Keypair.fromSecretKey(/* 64-byte secret */);
+
+const searcher = new FlowbackSearcher({
+  relayUrl: "wss://relay.flowback.fun/searcher",
+  signer: keypairSigner(keypair),
+  programId: process.env.FLOWBACK_PROGRAM_ID!,
+  rpcUrl: process.env.SOLANA_RPC_URL!,
+});
+
+await searcher.connect();
+
+searcher.onHint(async (hint) => {
+  const bidAmountLamports = computeBid(hint);
+  const tipLamports = 10_000n;
+  const recentBlockhash = await searcher.getRecentBlockhash();
+
+  const bidCommitmentSig = await signBidCommitment({
+    signer: keypairSigner(keypair),
+    hintId: hint.hintId,
+    bidAmount: bidAmountLamports,
+  });
+
+  const backrunTx = await yourBuildBackrunTx(hint, recentBlockhash);
+
+  const tipTx = await buildJitoTipTx({
+    signer: keypairSigner(keypair),
+    tipAccount: pickJitoTipAccount(),
+    tipLamports,
+    recentBlockhash,
+  });
+
+  await searcher.submitBid({
+    hintId: hint.hintId,
+    userCashbackLamports: bidAmountLamports,
+    jitoTipLamports: tipLamports,
+    backrunTx,
+    tipTx,
+    bidCommitmentSig,
+  });
+});
+
+searcher.onAuctionResult((r) =>
+  console.log(r.won ? `won ${r.hintId}` : `lost ${r.hintId}`),
+);
+```
+
+## Prerequisites
+
+- **Node 18+**
+- A **funded searcher keypair** — used both for auth and to fund the escrow PDA
+- A **Solana RPC URL** — used by the SDK only for `getLatestBlockhash`
+- The **FlowBack program ID** — published per-network. Ask the relay operator or check the README.
+
+## Where to next
+
+<Cards>
+  <Card
+    title="How it works"
+    href="/how-it-works"
+    description="Auction lifecycle, the 4-tx bundle, privacy model, and escrow semantics."
+  />
+  <Card
+    title="Quick start"
+    href="/quick-start"
+    description="Step-by-step: keypair → escrow → connect → bid → settle."
+  />
+  <Card
+    title="API reference"
+    href="/api-reference"
+    description="Every export, signature, parameter, and return type."
+  />
+</Cards>

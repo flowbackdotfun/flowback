@@ -1,0 +1,297 @@
+---
+title: Quick start
+description: Step-by-step searcher integration — keypair, escrow, connect, bid, withdraw. Each step is runnable.
+---
+
+This page walks you from a fresh project to a fully functional searcher bidding on live FlowBack auctions. Each step is small and runnable on its own. The consolidated runnable example sits at the bottom.
+
+For protocol context — what the bundle looks like, why the bid commitment is signed off-chain, and what the escrow does — read **[How it works](/how-it-works)** first.
+
+## Step 0: Install
+
+```bash
+pnpm add @flowback/searcher
+```
+
+Set up env vars:
+
+```bash
+# .env
+FLOWBACK_RELAY_URL=wss://relay.flowback.fun/searcher
+FLOWBACK_PROGRAM_ID=Fb...           # ask the relay operator
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+SEARCHER_SECRET_KEY=[12,34,56,...]  # 64-byte Keypair JSON array
+```
+
+## Step 1: Load your searcher keypair
+
+```ts
+import { Keypair } from "@solana/web3.js";
+
+const secret = JSON.parse(process.env.SEARCHER_SECRET_KEY!) as number[];
+const keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
+```
+
+The pubkey of this keypair is what the relay rate-limits, what owns your escrow PDA, and what signs the auth message. **Fund it with enough SOL** to cover escrow deposits + Jito tips + transaction fees.
+
+<Callout type="info">
+  The SDK never sees `keypair.secretKey` directly. It only signs through the
+  [`Signer`](/api-reference#signer) interface — see [API reference →
+  signers](/api-reference#signers) for KMS / hardware wallet setups.
+</Callout>
+
+## Step 2: Initialise your escrow PDA
+
+A first-time searcher must allocate their `SearcherEscrow` PDA on-chain. This is a one-time setup:
+
+```ts
+import { Connection, sendAndConfirmRawTransaction } from "@solana/web3.js";
+import { Buffer } from "node:buffer";
+import { buildEscrowInitTx, keypairSigner } from "@flowback/searcher";
+
+const connection = new Connection(process.env.SOLANA_RPC_URL!, "confirmed");
+const signer = keypairSigner(keypair);
+
+const { blockhash } = await connection.getLatestBlockhash("confirmed");
+const initTxBase64 = await buildEscrowInitTx({
+  signer,
+  programId: process.env.FLOWBACK_PROGRAM_ID!,
+  recentBlockhash: blockhash,
+});
+
+const sig = await sendAndConfirmRawTransaction(
+  connection,
+  Buffer.from(initTxBase64, "base64"),
+  { commitment: "confirmed" },
+);
+console.log("escrow initialised:", sig);
+```
+
+<Callout type="warn">
+  This is idempotent only by failure: re-running `buildEscrowInitTx` after the
+  PDA exists fails with Anchor's `init` constraint. Run it once.
+</Callout>
+
+## Step 3: Deposit lamports into escrow
+
+The escrow needs enough SOL to cover the bids you intend to land plus rent-exemption. Deposit before you bid:
+
+```ts
+import { buildEscrowDepositTx } from "@flowback/searcher";
+
+const { blockhash } = await connection.getLatestBlockhash("confirmed");
+const depositTxBase64 = await buildEscrowDepositTx({
+  signer,
+  programId: process.env.FLOWBACK_PROGRAM_ID!,
+  recentBlockhash: blockhash,
+  amount: 100_000_000n, // 0.1 SOL
+});
+
+await sendAndConfirmRawTransaction(
+  connection,
+  Buffer.from(depositTxBase64, "base64"),
+  { commitment: "confirmed" },
+);
+```
+
+A win debits your escrow by `bidAmount + reimbursement` (≈10k lamports + UsedHint rent). Size the deposit accordingly.
+
+## Step 4: Connect to the relay
+
+```ts
+import { FlowbackSearcher } from "@flowback/searcher";
+
+const searcher = new FlowbackSearcher({
+  relayUrl: process.env.FLOWBACK_RELAY_URL!,
+  signer,
+  programId: process.env.FLOWBACK_PROGRAM_ID!,
+  rpcUrl: process.env.SOLANA_RPC_URL!,
+});
+
+await searcher.connect();
+console.log("authenticated as", keypair.publicKey.toBase58());
+```
+
+`connect()` opens the WebSocket, signs the auth challenge, and resolves on `auth_ok`. It rejects with `auth timeout` (5 s) or `auth failed: ...` on a clock-skew or allowlist issue.
+
+After auth the SDK auto-reconnects on drops with exponential backoff. Subscribe to `onError` and `onDisconnect` if you care to log them:
+
+```ts
+searcher.onError((err) => console.error("ws error:", err));
+searcher.onDisconnect(() => console.warn("ws disconnected; reconnecting"));
+```
+
+## Step 5: React to hints — sign the bid commitment
+
+The relay broadcasts a `SearcherHint` to every searcher when an auction opens. You have until `auctionDeadlineMs` (typically ~200 ms) to bid:
+
+```ts
+import { signBidCommitment } from "@flowback/searcher";
+
+searcher.onHint(async (hint) => {
+  // your strategy: derive a bid amount from priceImpactBps + sizeBucket
+  const bidAmountLamports = computeBid(hint);
+
+  const bidCommitmentSig = await signBidCommitment({
+    signer,
+    hintId: hint.hintId,
+    bidAmount: bidAmountLamports,
+  });
+
+  // ... build txs and submit (next steps)
+});
+```
+
+The signed message is `flowback-bid:<32-char hex>:<decimal bidAmount>`. **`bidAmount` must equal `userCashbackLamports`** in the bid you submit — a mismatch is rejected on-chain at settlement time.
+
+## Step 6: Build the Jito tip transaction
+
+The bundle requires a Jito tip leg paid by you:
+
+```ts
+import { buildJitoTipTx, pickJitoTipAccount } from "@flowback/searcher";
+
+const recentBlockhash = await searcher.getRecentBlockhash();
+
+const tipLamports = 10_000n;
+const tipTx = await buildJitoTipTx({
+  signer,
+  tipAccount: pickJitoTipAccount(),
+  tipLamports,
+  recentBlockhash,
+});
+```
+
+`pickJitoTipAccount()` picks one of the eight canonical accounts at random. Long-running bots can periodically refresh the pool with [`fetchJitoTipAccounts`](/api-reference#fetchjitotipaccounts) in case Jito rotates.
+
+## Step 7: Submit the bid
+
+You also need to build your **backrun transaction** (Tx2 in the bundle) — that's your edge, not the SDK's. Once you have it as a base64-serialised tx string, submit:
+
+```ts
+const backrunTx = await yourBuildBackrunTx(hint, recentBlockhash);
+
+await searcher.submitBid({
+  hintId: hint.hintId,
+  userCashbackLamports: bidAmountLamports,
+  jitoTipLamports: tipLamports,
+  backrunTx,
+  tipTx,
+  bidCommitmentSig,
+});
+```
+
+`submitBid` resolves on `bid_accepted` or rejects on `bid_rejected: <reason>` or `bid ack timeout` (5 s). Then handle the outcome:
+
+```ts
+searcher.onAuctionResult((result) => {
+  if (result.won) {
+    console.log(`won ${result.hintId} at ${result.yourBid} lamports`);
+  } else {
+    console.log(
+      `lost ${result.hintId}; winner bid ${result.winningBid ?? "?"} lamports`,
+    );
+  }
+});
+```
+
+## Step 8: Withdraw idle balance
+
+If your strategy turns off, or you want to rebalance, pull SOL back to your wallet:
+
+```ts
+import { buildEscrowWithdrawTx } from "@flowback/searcher";
+
+const { blockhash } = await connection.getLatestBlockhash("confirmed");
+const withdrawTxBase64 = await buildEscrowWithdrawTx({
+  signer,
+  programId: process.env.FLOWBACK_PROGRAM_ID!,
+  recentBlockhash: blockhash,
+  amount: 50_000_000n, // 0.05 SOL
+});
+
+await sendAndConfirmRawTransaction(
+  connection,
+  Buffer.from(withdrawTxBase64, "base64"),
+  { commitment: "confirmed" },
+);
+```
+
+The program enforces rent-exemption — over-withdrawing fails with `RentBreach`.
+
+## Full runnable example
+
+Putting it all together (assumes the escrow already exists from Step 2):
+
+```ts title="searcher.ts"
+import "dotenv/config";
+import { Keypair } from "@solana/web3.js";
+import {
+  FlowbackSearcher,
+  buildJitoTipTx,
+  keypairSigner,
+  pickJitoTipAccount,
+  signBidCommitment,
+} from "@flowback/searcher";
+
+const secret = JSON.parse(process.env.SEARCHER_SECRET_KEY!) as number[];
+const keypair = Keypair.fromSecretKey(Uint8Array.from(secret));
+const signer = keypairSigner(keypair);
+
+const searcher = new FlowbackSearcher({
+  relayUrl: process.env.FLOWBACK_RELAY_URL!,
+  signer,
+  programId: process.env.FLOWBACK_PROGRAM_ID!,
+  rpcUrl: process.env.SOLANA_RPC_URL!,
+});
+
+searcher.onError((err) => console.error("[ws]", err));
+searcher.onDisconnect(() => console.warn("[ws] disconnected"));
+
+searcher.onAuctionResult((r) => {
+  console.log(r.won ? `[won] ${r.hintId}` : `[lost] ${r.hintId}`);
+});
+
+searcher.onHint(async (hint) => {
+  const bidAmountLamports = 5_000_000n; // your strategy goes here
+  const tipLamports = 10_000n;
+
+  const recentBlockhash = await searcher.getRecentBlockhash();
+
+  const [bidCommitmentSig, tipTx, backrunTx] = await Promise.all([
+    signBidCommitment({ signer, hintId: hint.hintId, bidAmount: bidAmountLamports }),
+    buildJitoTipTx({
+      signer,
+      tipAccount: pickJitoTipAccount(),
+      tipLamports,
+      recentBlockhash,
+    }),
+    yourBuildBackrunTx(hint, recentBlockhash),
+  ]);
+
+  try {
+    await searcher.submitBid({
+      hintId: hint.hintId,
+      userCashbackLamports: bidAmountLamports,
+      jitoTipLamports: tipLamports,
+      backrunTx,
+      tipTx,
+      bidCommitmentSig,
+    });
+  } catch (err) {
+    console.warn(`[bid] ${hint.hintId} rejected:`, err);
+  }
+});
+
+await searcher.connect();
+console.log("connected as", keypair.publicKey.toBase58());
+
+declare function yourBuildBackrunTx(
+  hint: import("@flowback/searcher").SearcherHint,
+  recentBlockhash: string,
+): Promise<string>;
+```
+
+## Reference implementation
+
+The FlowBack monorepo ships a working searcher at `seed-bot/src/index.ts`. It's an internal "seed" searcher used to guarantee demo cashback during the hackathon. It is not optimized for profitability, but it is a complete, production-shaped integration of every API on this page.
