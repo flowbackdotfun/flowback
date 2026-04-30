@@ -9,6 +9,7 @@ const bids: [string, string][] = [
   ["3vYT…kL8e", "0.0041"],
   ["dG4s…qN2m", "0.0026"],
 ];
+const DOCS_URL = process.env.NEXT_PUBLIC_DOCS_URL ?? "http://localhost:3001";
 
 export function SearchersSection() {
   const [tick, setTick] = useState(0);
@@ -53,8 +54,8 @@ export function SearchersSection() {
               </li>
             </ul>
             <div style={{ marginTop: 32, display: "flex", gap: 12 }}>
-              <a className="btn btn-ghost btn-sm" aria-disabled="true" href="#">
-                Read searcher docs <span className="soon-tag">soon</span>
+              <a className="btn btn-ghost btn-sm" href={DOCS_URL}>
+                Read searcher docs
               </a>
             </div>
           </div>

@@ -110,9 +110,14 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               )}
             </button>
           ) : (
-            <Link href="/swap" className="btn btn-primary btn-sm launch-full">
-              Launch App <Icon.Arrow />
-            </Link>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm launch-full"
+              disabled
+              aria-disabled="true"
+            >
+              Launch App <span className="soon-tag">soon</span>
+            </button>
           )}
           <button
             type="button"
@@ -173,13 +178,14 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               )}
             </button>
           ) : (
-            <Link
-              href="/swap"
+            <button
+              type="button"
               className="btn btn-primary btn-sm nav-button"
-              onClick={close}
+              disabled
+              aria-disabled="true"
             >
-              Launch App <Icon.Arrow />
-            </Link>
+              Launch App <span className="soon-tag">soon</span>
+            </button>
           )}
         </div>
       </div>

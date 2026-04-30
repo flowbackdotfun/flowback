@@ -271,6 +271,16 @@ p {
   opacity: 0.75;
   cursor: not-allowed;
 }
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+  transform: none;
+}
+.btn:disabled:hover {
+  box-shadow:
+    0 0 0 1px var(--accent),
+    0 10px 30px -10px var(--accent-glow);
+}
 .btn-ghost {
   background: transparent;
   color: var(--fg);
