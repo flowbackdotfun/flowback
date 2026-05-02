@@ -608,6 +608,14 @@ export function SwapCard({
             return;
           }
 
+          if (event.type === "auction_failed") {
+            setStatus({
+              tone: "error",
+              message: `Swap failed (${event.reason}). Try again.`,
+            });
+            return;
+          }
+
           setStatus({
             tone: "success",
             message: "Cashback confirmed.",

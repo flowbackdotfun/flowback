@@ -21,6 +21,7 @@ import { db as defaultDb } from "../db/client.js";
 import { auctions } from "../db/schema.js";
 import type { SearcherWsRegistry } from "../ws/searcher.js";
 import type { UserStatusEmitter } from "../ws/user.js";
+import type { PendingCashbackRegistry } from "./pending-cashback.js";
 import { PreparedSwapStore, type PreparedSwap } from "./prepare-store.js";
 
 type Db = typeof defaultDb;
@@ -52,6 +53,7 @@ export interface IntentServiceDeps {
   auctionManager: AuctionManager;
   registry: SearcherWsRegistry;
   emitter: UserStatusEmitter;
+  pendingCashbacks: PendingCashbackRegistry;
   store: PreparedSwapStore;
   programId: string;
   treasury: string;
@@ -214,6 +216,18 @@ async function finalizeAuction(args: FinalizeParams): Promise<void> {
       relayKeypair: args.deps.relayKeypair,
       connection: args.deps.connection,
       rpc: args.deps.rpc,
+      onBeforeBundleSubmit: (winnerBid) => {
+        // Register BEFORE submitBundle — the validator can commit the settle
+        // tx and push its CashbackSettled log to our indexer faster than
+        // confirmTransaction returns to JS. Registering after submitBundle
+        // resolves loses the race.
+        args.deps.pendingCashbacks.register(
+          args.intent.user,
+          winnerBid.searcherPubkey,
+          winnerBid.userCashbackLamports,
+          args.hintId,
+        );
+      },
       onBundleSubmitted: (bundleId) => {
         args.deps.emitter.emitBundleSubmitted(args.hintId, bundleId);
       },
@@ -226,14 +240,25 @@ async function finalizeAuction(args: FinalizeParams): Promise<void> {
       winningBidLamports: result.winnerBid?.userCashbackLamports ?? null,
     });
 
+    // Every terminal status must produce exactly one frontend event so the
+    // /status WebSocket subscriber can settle. `landed` is the exception:
+    // the cashback indexer emits `cashback_confirmed` once the on-chain
+    // CashbackSettled log is observed.
     if (result.status === "fallback" && result.txSignature) {
       args.deps.emitter.emitFallbackExecuted(args.hintId, result.txSignature);
+    } else if (result.status === "timeout") {
+      args.deps.emitter.emitAuctionFailed(args.hintId, "bundle_timeout");
+    } else if (result.status === "no_valid_winner") {
+      args.deps.emitter.emitAuctionFailed(args.hintId, "no_valid_winner");
+    } else if (result.status === "fallback" && !result.txSignature) {
+      args.deps.emitter.emitAuctionFailed(args.hintId, "fallback_no_signature");
     }
   } catch (err) {
     console.error(
       `[intent-service] orchestration error for ${args.hintId}:`,
       err,
     );
+    args.deps.emitter.emitAuctionFailed(args.hintId, "orchestration_error");
   } finally {
     try {
       await persistAuction(

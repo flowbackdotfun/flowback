@@ -21,6 +21,11 @@ export type UserStatusEvent =
       type: "fallback_executed";
       auctionId: string;
       txSignature: string;
+    }
+  | {
+      type: "auction_failed";
+      auctionId: string;
+      reason: string;
     };
 
 interface UserSocketData {
@@ -96,6 +101,10 @@ export class UserStatusEmitter {
 
   emitFallbackExecuted(auctionId: string, txSignature: string): void {
     this.emit({ type: "fallback_executed", auctionId, txSignature });
+  }
+
+  emitAuctionFailed(auctionId: string, reason: string): void {
+    this.emit({ type: "auction_failed", auctionId, reason });
   }
 
   subscriberCount(auctionId: string): number {

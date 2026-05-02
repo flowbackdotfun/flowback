@@ -49,6 +49,8 @@ export interface OrchestrateSwapParams {
   connection: Connection;
   rpc: Rpc<SimulateTransactionApi & SendTransactionApi>;
   maxCandidates?: number;
+  /** Fires immediately before `submitBundle` — the caller can register pending state keyed by `winnerBid` while the on-chain settle log still hasn't been observed. */
+  onBeforeBundleSubmit?: (winnerBid: SearcherBid) => void;
   /** Called as soon as Jito accepts a bundle UUID, before we wait on the result stream. Lets the caller emit a `bundle_submitted` frontend event early. */
   onBundleSubmitted?: (bundleId: string, winnerBid: SearcherBid) => void;
 }
@@ -107,6 +109,11 @@ export async function orchestrateSwap(
     console.log(
       `[orch] submit     hint=${params.hintId.slice(0, 8)}  txs=${wireTxs.length}`,
     );
+    // Notify before submitting: the on-chain `CashbackSettled` log can fire
+    // before `submitBundle` resolves (validator commits faster than the JS
+    // confirmTransaction round-trip), so any indexer-side state must be in
+    // place by now.
+    params.onBeforeBundleSubmit?.(winnerBid);
     const bundleId = await submitBundle(wireTxs);
     params.onBundleSubmitted?.(bundleId, winnerBid);
     const status: BundleStatus = await pollBundleStatus(bundleId);

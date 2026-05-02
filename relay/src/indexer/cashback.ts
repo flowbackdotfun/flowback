@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto";
 import { PublicKey } from "@solana/web3.js";
 import { address, createSolanaRpcSubscriptions } from "@solana/kit";
-import { eq, and, gt, desc } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 import { db as defaultDb } from "../db/client.js";
 import { auctions, cashbackEvents } from "../db/schema.js";
+import type { PendingCashbackRegistry } from "../services/pending-cashback.js";
 import type { UserStatusEmitter } from "../ws/user.js";
 
 type RpcSubscriptions = ReturnType<typeof createSolanaRpcSubscriptions>;
@@ -14,6 +15,7 @@ export interface CashbackIndexerDeps {
   rpcSubscriptions: RpcSubscriptions;
   programId: string;
   emitter: UserStatusEmitter;
+  pendingCashbacks: PendingCashbackRegistry;
   db?: Db;
 }
 
@@ -25,9 +27,6 @@ const EVENT_DISCRIMINATOR = createHash("sha256")
 
 // Fixed event payload size: 8 disc + 32 user + 32 searcher + 8 bid + 8 cashback + 8 fee + 8 ts
 const EVENT_BYTE_LENGTH = 104;
-
-// Look back 5 minutes when matching an event to an auction row
-const AUCTION_LOOKUP_WINDOW_MS = 5 * 60 * 1000;
 
 export function startCashbackIndexer(deps: CashbackIndexerDeps): () => void {
   const abort = new AbortController();
@@ -57,7 +56,13 @@ async function runSubscription(
       const event = parseCashbackSettledEvent(logs);
       if (!event) continue;
 
-      await handleEvent(db, deps.emitter, signature, event);
+      await handleEvent(
+        db,
+        deps.emitter,
+        deps.pendingCashbacks,
+        signature,
+        event,
+      );
     }
   } catch (err) {
     if (!signal.aborted) {
@@ -78,12 +83,40 @@ interface CashbackSettledEvent {
 async function handleEvent(
   db: Db,
   emitter: UserStatusEmitter,
+  pendingCashbacks: PendingCashbackRegistry,
   signature: string,
   event: CashbackSettledEvent,
 ): Promise<void> {
-  try {
-    const auction = await lookupAuction(db, event.user, event.searcher);
+  // Resolve hintId via the in-memory registry the relay populated when it
+  // submitted the bundle. The on-chain event carries no hint_id, so without
+  // this we'd have to guess from (user, searcher, bidAmount) by querying the
+  // DB — which (a) races with persistAuction and (b) is ambiguous when the
+  // same searcher won a recent prior auction for the same user.
+  const pending = pendingCashbacks.take(
+    event.user,
+    event.searcher,
+    event.bidAmountLamports,
+  );
 
+  if (pending) {
+    emitter.emitCashbackConfirmed(
+      pending.hintId,
+      event.userCashbackLamports,
+      signature,
+    );
+  } else {
+    console.warn("[indexer] CashbackSettled with no pending registry entry", {
+      signature,
+      user: event.user,
+      searcher: event.searcher,
+      bidAmountLamports: event.bidAmountLamports.toString(),
+    });
+  }
+
+  // Persist for /history. Best-effort: a failure here doesn't affect the WS
+  // subscriber, which already settled above.
+  try {
+    const auctionId = await resolveAuctionId(db, pending?.hintId);
     await db
       .insert(cashbackEvents)
       .values({
@@ -93,69 +126,37 @@ async function handleEvent(
         bidAmountLamports: event.bidAmountLamports,
         cashbackLamports: event.userCashbackLamports,
         protocolFeeLamports: event.protocolFeeLamports,
-        auctionId: auction?.id ?? null,
+        auctionId,
         timestamp: new Date(Number(event.timestamp) * 1000),
       })
       .onConflictDoNothing();
-
-    if (auction) {
-      emitter.emitCashbackConfirmed(
-        auction.hintId,
-        event.userCashbackLamports,
-        signature,
-      );
-    }
 
     console.log("[indexer] CashbackSettled:", {
       signature,
       user: event.user,
       cashbackLamports: event.userCashbackLamports.toString(),
       protocolFeeLamports: event.protocolFeeLamports.toString(),
-      auctionId: auction?.id ?? null,
+      hintId: pending?.hintId ?? null,
     });
   } catch (err) {
-    console.error("[indexer] failed to handle CashbackSettled:", {
+    console.error("[indexer] failed to persist CashbackSettled:", {
       signature,
       err,
     });
   }
 }
 
-// Race window: the auction row is written in finalizeAuction's `finally` block
-// AFTER orchestrateSwap returns. The settle tx lands inside orchestrateSwap, so
-// the indexer's WS notification can arrive before the row exists. Retry briefly.
-const LOOKUP_RETRY_ATTEMPTS = 8;
-const LOOKUP_RETRY_DELAY_MS = 150;
-
-async function lookupAuction(
+async function resolveAuctionId(
   db: Db,
-  userPubkey: string,
-  searcherPubkey: string,
-): Promise<{ id: string; hintId: string } | null> {
-  const cutoff = new Date(Date.now() - AUCTION_LOOKUP_WINDOW_MS);
-
-  for (let attempt = 0; attempt < LOOKUP_RETRY_ATTEMPTS; attempt++) {
-    const rows = await db
-      .select({ id: auctions.id, hintId: auctions.hintId })
-      .from(auctions)
-      .where(
-        and(
-          eq(auctions.userPubkey, userPubkey),
-          eq(auctions.winnerPubkey, searcherPubkey),
-          gt(auctions.settledAt, cutoff),
-        ),
-      )
-      .orderBy(desc(auctions.settledAt))
-      .limit(1);
-
-    if (rows[0]) return rows[0];
-    await sleep(LOOKUP_RETRY_DELAY_MS);
-  }
-  return null;
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((res) => setTimeout(res, ms));
+  hintId: string | undefined,
+): Promise<string | null> {
+  if (!hintId) return null;
+  const rows = await db
+    .select({ id: auctions.id })
+    .from(auctions)
+    .where(eq(auctions.hintId, hintId))
+    .limit(1);
+  return rows[0]?.id ?? null;
 }
 
 function parseCashbackSettledEvent(

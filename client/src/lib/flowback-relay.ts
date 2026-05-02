@@ -77,6 +77,11 @@ export type UserStatusEvent =
       type: "fallback_executed";
       auctionId: string;
       txSignature: string;
+    }
+  | {
+      type: "auction_failed";
+      auctionId: string;
+      reason: string;
     };
 
 export class RelayRequestError extends Error {
@@ -349,6 +354,18 @@ function parseStatusEvent(data: unknown): UserStatusEvent | null {
       type: "fallback_executed",
       auctionId: event.auctionId,
       txSignature: event.txSignature,
+    };
+  }
+
+  if (
+    event.type === "auction_failed" &&
+    typeof event.auctionId === "string" &&
+    typeof event.reason === "string"
+  ) {
+    return {
+      type: "auction_failed",
+      auctionId: event.auctionId,
+      reason: event.reason,
     };
   }
 

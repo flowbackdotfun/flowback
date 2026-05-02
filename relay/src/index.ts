@@ -16,6 +16,7 @@ import { createIntentRoutes } from "./routes/intent.route.js";
 import { createPrepareRoutes } from "./routes/prepare.route.js";
 import { createQuoteRoutes } from "./routes/quote.route.js";
 import { createWaitlistRoutes } from "./routes/waitlist.route.js";
+import { PendingCashbackRegistry } from "./services/pending-cashback.js";
 import { PreparedSwapStore } from "./services/prepare-store.js";
 import { attachSearcherWs, SearcherWsRegistry } from "./ws/searcher.js";
 import { attachUserStatusWs, UserStatusEmitter } from "./ws/user.js";
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
   const emitter = new UserStatusEmitter();
   const auctionManager = new AuctionManager({ searcherRegistry: registry });
   const preparedSwaps = new PreparedSwapStore();
+  const pendingCashbacks = new PendingCashbackRegistry();
 
   const httpApp = express();
   httpApp.use(cors({ origin: ALLOWED_ORIGIN, credentials: true }));
@@ -60,6 +62,7 @@ async function main(): Promise<void> {
       auctionManager,
       registry,
       emitter,
+      pendingCashbacks,
       store: preparedSwaps,
       programId: FLOWBACK_PROGRAM_ID,
       treasury: TREASURY_WALLET,
@@ -92,6 +95,7 @@ async function main(): Promise<void> {
     rpcSubscriptions,
     programId: FLOWBACK_PROGRAM_ID,
     emitter,
+    pendingCashbacks,
   });
 }
 
