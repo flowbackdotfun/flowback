@@ -13,6 +13,7 @@ import { ensureRelayDbSchema } from "./db/client.js";
 import { startCashbackIndexer } from "./indexer/cashback.js";
 import { createHistoryRoutes } from "./routes/history.route.js";
 import { createIntentRoutes } from "./routes/intent.route.js";
+import { createMevAnalysisRoutes } from "./routes/mev-analysis.route.js";
 import { createPrepareRoutes } from "./routes/prepare.route.js";
 import { createQuoteRoutes } from "./routes/quote.route.js";
 import { createWaitlistRoutes } from "./routes/waitlist.route.js";
@@ -72,6 +73,7 @@ async function main(): Promise<void> {
     }),
   );
   httpApp.use(createHistoryRoutes());
+  httpApp.use(createMevAnalysisRoutes());
   httpApp.use(createWaitlistRoutes());
   httpApp.listen(REST_PORT, () => {
     console.log(`[relay] http listening on :${REST_PORT}`);
