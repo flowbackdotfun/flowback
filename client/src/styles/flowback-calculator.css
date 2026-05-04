@@ -1,0 +1,129 @@
+/* Analyzer shimmer skeleton */
+@keyframes analyzer-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--chip),
+    transparent
+  );
+  animation: analyzer-shimmer 1.6s ease-in-out infinite;
+}
+
+/* Scanning dots animation */
+@keyframes analyzer-dots {
+  0% {
+    width: 0;
+  }
+  100% {
+    width: 1.2em;
+  }
+}
+
+.analyzer-dots::after {
+  content: "...";
+  display: inline-block;
+  width: 1em;
+  overflow: hidden;
+  vertical-align: bottom;
+  animation: analyzer-dots 1.4s steps(4, end) infinite;
+}
+
+/* Evidence arrow (dashed line with triangle head) */
+.ev-arrow {
+  width: 24px;
+  height: 1px;
+  border-top: 1px dashed var(--line-strong);
+  position: relative;
+}
+.ev-arrow::after {
+  content: "";
+  position: absolute;
+  right: -1px;
+  top: -3px;
+  width: 0;
+  height: 0;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+  border-left: 5px solid var(--line-strong);
+}
+
+/* Sort select — native select with custom caret */
+.analyzer-sort {
+  appearance: none;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  padding: 7px 28px 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  outline: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'><path d='M1 1l4 4 4-4' stroke='%23999' stroke-width='1.2' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+}
+
+/* Analyzer accordion overrides */
+.analyzer-accordion [data-slot="accordion-item"] {
+  border-bottom: 1px solid var(--line);
+}
+.analyzer-accordion [data-slot="accordion-item"]:last-child {
+  border-bottom: 0;
+}
+.analyzer-accordion [data-slot="accordion-trigger"] {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  opacity: 1;
+  pointer-events: auto;
+  text-align: left;
+}
+.analyzer-accordion [data-slot="accordion-trigger"]:hover {
+  text-decoration: none;
+}
+.analyzer-accordion [data-slot="accordion-trigger"][data-clean] {
+  cursor: default;
+  pointer-events: none;
+}
+.analyzer-accordion [data-slot="accordion-trigger"][data-clean] a,
+.analyzer-accordion [data-slot="accordion-trigger"][data-clean] [title="Copy"] {
+  pointer-events: auto;
+  cursor: pointer;
+}
+.analyzer-accordion [data-slot="accordion-trigger-icon"] {
+  display: none;
+}
+.analyzer-accordion [data-slot="accordion-content"] {
+  font-size: inherit;
+}
+/* Make the AccordionHeader (h3) transparent so trigger fills width */
+.analyzer-accordion [data-slot="accordion-item"] > :first-child {
+  display: contents;
+}
+
+/* MEV row hover — uses --mev-type-color set inline */
+.mev-row[data-affected]:hover {
+  background-color: color-mix(in oklch, var(--mev-type-color) 10%, transparent) !important;
+}

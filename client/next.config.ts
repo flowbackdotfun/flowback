@@ -24,6 +24,10 @@ const nextConfig: NextConfig = {
         source: "/api/waitlist",
         destination: `${relayUrl}/waitlist`,
       },
+      {
+        source: "/api/flowback/mev-analysis/:wallet",
+        destination: `${relayUrl}/mev-analysis/:wallet`,
+      },
     ];
   },
 };

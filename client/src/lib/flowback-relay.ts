@@ -388,3 +388,55 @@ function bytesToBase64(bytes: Uint8Array): string {
   }
   return btoa(binary);
 }
+
+export type MevType = "sandwiched" | "frontrun" | "backrun_target" | "clean";
+
+export type AnalyzedSwap = {
+  signature: string;
+  timestamp: number;
+  slot: number;
+  source: string;
+  inputMint: string;
+  outputMint: string;
+  inputAmount: string;
+  actualOutputAmount: string;
+  expectedOutputAmount: string;
+  estimatedLossUsd: number;
+  estimatedLossToken: string;
+  estimatedCashbackToken: string;
+  mevType: MevType;
+  confidence: "high" | "medium";
+};
+
+export type MevAnalysisResult = {
+  wallet: string;
+  analyzedFrom: number;
+  analyzedTo: number;
+  totalSwaps: number;
+  swaps: AnalyzedSwap[];
+  page: number;
+  hasMore: boolean;
+  totalEstimatedLossUsd: number;
+  flowbackWouldReturnUsd: number;
+  flowbackWouldReturnSol: number;
+  cashbackSampleSize: number;
+  topPairsByLoss: { inputMint: string; outputMint: string; lossUsd: number }[];
+  cumulativeLoss: { month: string; lossUsd: number; count: number }[];
+  breakdown: {
+    sandwiched: number;
+    frontrun: number;
+    backrunTarget: number;
+    clean: number;
+  };
+};
+
+export async function fetchMevAnalysis(
+  wallet: string,
+  opts?: { pages?: number; signal?: AbortSignal },
+): Promise<MevAnalysisResult> {
+  const params = opts?.pages && opts.pages > 1 ? `?pages=${opts.pages}` : "";
+  return relayFetch<MevAnalysisResult>(
+    `/api/flowback/mev-analysis/${wallet}${params}`,
+    { signal: opts?.signal },
+  );
+}

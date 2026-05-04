@@ -41,6 +41,8 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
 
   const close = () => setMenuOpen(false);
   const onSwapPage = pathname === "/swap";
+  const onCalculatorPage = pathname === "/calculator";
+  const isAppPage = onSwapPage || onCalculatorPage;
   const shortWallet = publicKey
     ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`
     : "";
@@ -71,7 +73,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           <span>FlowBack</span>
         </Link>
         <div className="nav-links">
-          {!onSwapPage ? (
+          {!isAppPage ? (
             <>
               <a href="#how">How it works</a>
               <a href="#searchers">Searchers</a>
@@ -80,6 +82,12 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               <a href={DOCS_URL}>Docs</a>
             </>
           ) : null}
+          <Link
+            href="/calculator"
+            style={onCalculatorPage ? { color: "var(--fg)" } : undefined}
+          >
+            Calculator
+          </Link>
         </div>
         <div className="nav-right">
           <button
@@ -136,7 +144,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
           data-open={menuOpen}
           style={blurredSurfaceStyle}
         >
-          {!onSwapPage ? (
+          {!isAppPage ? (
             <>
               <a href="#how" onClick={close}>
                 How it works
@@ -155,6 +163,9 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               </a>
             </>
           ) : null}
+          <Link href="/calculator" onClick={close}>
+            Calculator
+          </Link>
           {onSwapPage ? (
             <button
               type="button"
