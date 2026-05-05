@@ -17,6 +17,7 @@ export interface MevAnalysisController {
 export function createMevAnalysisController(): MevAnalysisController {
   return {
     analyze: async (req, res) => {
+      console.log(`REQUESTED ANALYZE FOR: ${req.body}`)
       const wallet = req.params.wallet;
       if (typeof wallet !== "string" || wallet.length === 0) {
         res

@@ -54,25 +54,40 @@ export interface MevAnalysisResult {
 
 // ── Constants ───────────────────────────────────────────────────────
 
-const SOL_MINT = "So11111111111111111111111111111111";
+const SOL_MINT = "So11111111111111111111111111111111111111112";
 const SOL_DECIMALS = 9;
 const MOCK_MODE = process.env.MOCK_CALCULATOR_VALUE === "true";
 const DEFAULT_CASHBACK_RATIO = 0.003;
 
 const VULNERABLE_AMMS = new Set([
-  "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
-  "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
-  "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",
+  "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8", // Raydium AMM V4
+  "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",   // Orca Whirlpools
+  "CAMMCzo5YL8w4VFF8KVHrK22GGUsp5VTaW7grrKgrWqK",   // Raydium CLMM
+  "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C",   // Raydium CPMM
+  "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",   // Meteora DLMM
+  "Eo7WjKq67rjJQSZxS6z3YkapzY3eMj6Xy8X5EQVn5UaB",   // Meteora Pools
+  "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY",     // Phoenix
 ]);
 
 const POPULAR_PAIRS = new Set([
-  `${SOL_MINT}-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`,
-  `${SOL_MINT}-Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB`,
+  `${SOL_MINT}-EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v`,   // SOL/USDC
+  `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v-${SOL_MINT}`,   // USDC/SOL
+  `${SOL_MINT}-Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB`,   // SOL/USDT
+  `Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB-${SOL_MINT}`,   // USDT/SOL
+  `${SOL_MINT}-DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263`, // SOL/BONK
+  `DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263-${SOL_MINT}`, // BONK/SOL
+  `${SOL_MINT}-JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN`,   // SOL/JUP
+  `JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN-${SOL_MINT}`,   // JUP/SOL
+  `${SOL_MINT}-EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm`, // SOL/WIF
+  `EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm-${SOL_MINT}`, // WIF/SOL
+  `${SOL_MINT}-J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn`, // SOL/JITO
+  `J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn-${SOL_MINT}`, // JITO/SOL
+  `${SOL_MINT}-4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R`, // SOL/RAY
+  `4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R-${SOL_MINT}`, // RAY/SOL
 ]);
 
 const MINT_SYMBOLS: Record<string, string> = {
   [SOL_MINT]: "SOL",
-  So11111111111111111111111111111111111111112: "SOL",
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: "USDC",
   Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB: "USDT",
   DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263: "BONK",
@@ -154,13 +169,10 @@ export async function analyzeWalletMev(params: {
   if (normalized.length === 0)
     return emptyResult(params.wallet, pages, hasMore);
 
-  const uniqueMints = new Set<string>();
-  for (const s of normalized) {
-    uniqueMints.add(s.inputMint);
-    uniqueMints.add(s.outputMint);
-  }
-  const prices = await fetchTokenPrices([...uniqueMints]);
-  const solPrice = prices.get(SOL_MINT) ?? 0;
+  const prices = await buildPriceCache(normalized);
+
+  const latestTs = Math.max(...normalized.map((s) => s.timestamp));
+  const solPrice = lookupPrice(prices, SOL_MINT, latestTs) ?? 0;
 
   const cashbackRatios = await getCashbackRatios();
   const totalSampleSize = [...cashbackRatios.values()].reduce(
@@ -169,13 +181,68 @@ export async function analyzeWalletMev(params: {
   );
 
   const inputUsdValues = normalized
-    .map((s) => s.inputAmount * (prices.get(s.inputMint) ?? 0))
+    .map((s) => {
+      const p = lookupPrice(prices, s.inputMint, s.timestamp) ?? 0;
+      return s.inputAmount * p;
+    })
     .filter((v) => v > 0)
     .sort((a, b) => a - b);
   const p75 =
     inputUsdValues.length > 0
       ? inputUsdValues[Math.floor(inputUsdValues.length * 0.75)]
       : 0;
+
+  // Phase 1: heuristic classification
+  const heuristicResults: { swap: NormalizedSwap; c: Classification }[] = [];
+  for (const swap of normalized) {
+    const c = classifySwap(swap, prices, p75);
+    heuristicResults.push({ swap, c });
+  }
+
+  // Phase 2: block-level verification for flagged swaps
+  const heliusApiKey = process.env.HELIUS_API_KEY;
+  if (heliusApiKey) {
+    const flagged = heuristicResults.filter(
+      (r) => r.c.mevType !== "clean",
+    );
+
+    const slotGroups = new Map<number, typeof flagged>();
+    for (const item of flagged) {
+      let group = slotGroups.get(item.swap.slot);
+      if (!group) {
+        group = [];
+        slotGroups.set(item.swap.slot, group);
+      }
+      group.push(item);
+    }
+
+    const VERIFY_CONCURRENCY = 3;
+    const slotEntries = [...slotGroups.entries()];
+    for (let i = 0; i < slotEntries.length; i += VERIFY_CONCURRENCY) {
+      const batch = slotEntries.slice(i, i + VERIFY_CONCURRENCY);
+      const results = await Promise.all(
+        batch.map(([slot, items]) =>
+          fetchBlockSwapNeighbors(slot, items.map((it) => it.swap), heliusApiKey),
+        ),
+      );
+      for (const verified of results) {
+        for (const [sig, result] of verified) {
+          if (!result.confirmed) {
+            const item = flagged.find((f) => f.swap.signature === sig);
+            if (item) {
+              item.c = {
+                mevType: "clean",
+                confidence: "high",
+                estimatedLossUsd: 0,
+                lossSol: 0,
+                expectedOutput: item.swap.outputAmount,
+              };
+            }
+          }
+        }
+      }
+    }
+  }
 
   const allSwaps: AnalyzedSwap[] = [];
   const breakdown = { sandwiched: 0, frontrun: 0, backrunTarget: 0, clean: 0 };
@@ -187,17 +254,16 @@ export async function analyzeWalletMev(params: {
   let totalLossUsd = 0;
   let totalCashbackSol = 0;
 
-  for (const swap of normalized) {
-    const c = classifySwap(swap, prices, p75);
-
+  for (const { swap, c } of heuristicResults) {
     const key = c.mevType === "backrun_target" ? "backrunTarget" : c.mevType;
     breakdown[key]++;
 
     let cashbackSol = 0;
     if (c.mevType !== "clean") {
-      const inputPrice = prices.get(swap.inputMint) ?? 0;
+      const inputPrice = lookupPrice(prices, swap.inputMint, swap.timestamp) ?? 0;
+      const swapSolPrice = lookupPrice(prices, SOL_MINT, swap.timestamp) ?? solPrice;
       const inputSolEquiv =
-        solPrice > 0 ? (swap.inputAmount * inputPrice) / solPrice : 0;
+        swapSolPrice > 0 ? (swap.inputAmount * inputPrice) / swapSolPrice : 0;
       const bucket = bucketForSol(inputSolEquiv);
       const ratio = cashbackRatios.get(bucket)?.ratio ?? DEFAULT_CASHBACK_RATIO;
       cashbackSol = inputSolEquiv * ratio;
@@ -323,8 +389,6 @@ function bucketForSol(solAmount: number): SizeBucket {
 
 // ── Swap extraction ────────────────────────��────────────────────────
 
-const SOL_FULL_MINT = "So11111111111111111111111111111111111111112";
-
 function extractSwap(tx: HeliusEnhancedTransaction): NormalizedSwap | null {
   const swap = tx.events?.swap;
   if (swap) return extractFromSwapEvent(tx, swap);
@@ -433,6 +497,20 @@ function extractFromTransfers(
 
   if (inputMint === outputMint) return null;
 
+  const allProgramIds = new Set<string>();
+  for (const ix of tx.instructions ?? []) {
+    allProgramIds.add(ix.programId);
+    for (const inner of ix.innerInstructions ?? []) {
+      allProgramIds.add(inner.programId);
+    }
+  }
+  const usesVulnerableAmm = [...allProgramIds].some((id) =>
+    VULNERABLE_AMMS.has(id),
+  );
+  const dexCount = [...allProgramIds].filter((id) =>
+    VULNERABLE_AMMS.has(id),
+  ).length;
+
   return {
     signature: tx.signature,
     timestamp: tx.timestamp,
@@ -444,20 +522,20 @@ function extractFromTransfers(
     outputAmount,
     inputDecimals,
     outputDecimals,
-    isSinglePool: false,
-    usesVulnerableAmm: false,
+    isSinglePool: dexCount === 1,
+    usesVulnerableAmm,
   };
 }
 
 function normalizeMint(mint: string): string {
-  return mint === SOL_FULL_MINT ? SOL_MINT : mint;
+  return mint;
 }
 
 // ── Classification ──────────────────────────────────────────────────
 
 function classifySwap(
   swap: NormalizedSwap,
-  prices: Map<string, number>,
+  cache: PriceCache,
   p75UsdInput: number,
 ): Classification {
   const clean: Classification = {
@@ -468,21 +546,23 @@ function classifySwap(
     expectedOutput: swap.outputAmount,
   };
 
-  const inputPrice = prices.get(swap.inputMint);
-  const outputPrice = prices.get(swap.outputMint);
-  const solPrice = prices.get(SOL_MINT) ?? 0;
+  const inputPrice = lookupPrice(cache, swap.inputMint, swap.timestamp);
+  const outputPrice = lookupPrice(cache, swap.outputMint, swap.timestamp);
+  const solPrice = lookupPrice(cache, SOL_MINT, swap.timestamp) ?? 0;
   if (!inputPrice || !outputPrice || swap.inputAmount === 0) return clean;
 
   const fairRate = inputPrice / outputPrice;
   const actualRate = swap.outputAmount / swap.inputAmount;
   const deviation = (fairRate - actualRate) / fairRate;
 
-  if (deviation <= 0.001 || deviation > 0.05) return clean;
+  if (deviation <= 0.005 || deviation > 0.15) return clean;
 
   const expectedOutput = swap.inputAmount * fairRate;
   const lossTokens = expectedOutput - swap.outputAmount;
   const lossUsd = lossTokens * outputPrice;
   const lossSol = solPrice > 0 ? lossUsd / solPrice : 0;
+
+  if (lossUsd < 0.10) return clean;
 
   const pairKey = `${swap.inputMint}-${swap.outputMint}`;
   const isPopularPair = POPULAR_PAIRS.has(pairKey);
@@ -491,13 +571,13 @@ function classifySwap(
   let mevType: MevType;
   let confidence: Confidence;
 
-  if (swap.isSinglePool && swap.usesVulnerableAmm && deviation > 0.005) {
+  if (swap.isSinglePool && swap.usesVulnerableAmm && deviation > 0.01) {
     mevType = "sandwiched";
     confidence = "high";
-  } else if (swap.usesVulnerableAmm && deviation > 0.003 && isPopularPair) {
+  } else if (swap.usesVulnerableAmm && deviation > 0.008 && isPopularPair) {
     mevType = "frontrun";
     confidence = "medium";
-  } else if (isLargeSwap && swap.isSinglePool && deviation > 0.001) {
+  } else if (isLargeSwap && swap.isSinglePool && deviation > 0.005) {
     mevType = "backrun_target";
     confidence = "medium";
   } else {
@@ -513,24 +593,46 @@ function classifySwap(
   };
 }
 
-// ── Helpers ─────────────────────────────────────────────────────────
+// ── Price cache (DeFiLlama historical) ─────────────────────────────
 
-async function fetchTokenPrices(mints: string[]): Promise<Map<string, number>> {
+type PriceCache = Map<string, number>;
+
+function hourBucket(ts: number): number {
+  return Math.floor(ts / 3600) * 3600;
+}
+
+function priceKey(mint: string, ts: number): string {
+  return `${mint}:${hourBucket(ts)}`;
+}
+
+function lookupPrice(
+  cache: PriceCache,
+  mint: string,
+  ts: number,
+): number | undefined {
+  return cache.get(priceKey(mint, ts));
+}
+
+async function fetchHistoricalPrices(
+  mints: string[],
+  timestamp: number,
+): Promise<Map<string, number>> {
   const prices = new Map<string, number>();
   if (mints.length === 0) return prices;
 
   try {
-    const ids = mints.join(",");
+    const ids = mints.map((m) => `solana:${m}`).join(",");
     const res = await fetch(
-      `${process.env.JUPITER_PRICE_BASE_URL ?? "https://api.jup.ag"}/price/v2?ids=${ids}`,
+      `https://coins.llama.fi/prices/historical/${timestamp}/${ids}`,
     );
     if (!res.ok) return prices;
 
     const json = (await res.json()) as {
-      data: Record<string, { price: string } | undefined>;
+      coins?: Record<string, { price?: number } | undefined>;
     };
-    for (const [mint, info] of Object.entries(json.data)) {
-      if (info?.price) prices.set(mint, Number(info.price));
+    for (const [key, info] of Object.entries(json.coins ?? {})) {
+      const mint = key.replace("solana:", "");
+      if (info?.price) prices.set(mint, info.price);
     }
   } catch {
     // Best-effort
@@ -538,6 +640,207 @@ async function fetchTokenPrices(mints: string[]): Promise<Map<string, number>> {
 
   return prices;
 }
+
+async function buildPriceCache(swaps: NormalizedSwap[]): Promise<PriceCache> {
+  const cache: PriceCache = new Map();
+
+  const bucketMints = new Map<number, Set<string>>();
+  for (const s of swaps) {
+    const bucket = hourBucket(s.timestamp);
+    let mints = bucketMints.get(bucket);
+    if (!mints) {
+      mints = new Set();
+      bucketMints.set(bucket, mints);
+    }
+    mints.add(s.inputMint);
+    mints.add(s.outputMint);
+    mints.add(SOL_MINT);
+  }
+
+  const CONCURRENCY = 4;
+  const entries = [...bucketMints.entries()];
+  for (let i = 0; i < entries.length; i += CONCURRENCY) {
+    const batch = entries.slice(i, i + CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(([bucket, mints]) =>
+        fetchHistoricalPrices([...mints], bucket).then((prices) => ({
+          bucket,
+          prices,
+        })),
+      ),
+    );
+    for (const { bucket, prices } of results) {
+      for (const [mint, price] of prices) {
+        cache.set(`${mint}:${bucket}`, price);
+      }
+    }
+  }
+
+  return cache;
+}
+
+// ── Block-level sandwich verification ──────────────────────────────
+
+interface BlockVerification {
+  confirmed: boolean;
+  frontrunSig?: string;
+  backrunSig?: string;
+}
+
+const WELL_KNOWN_PROGRAMS = new Set([
+  "11111111111111111111111111111111",
+  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL",
+  "ComputeBudget111111111111111111111111111111",
+  "Vote111111111111111111111111111111111111111",
+  SOL_MINT,
+]);
+
+interface BlockTx {
+  transaction: {
+    signatures: string[];
+    message: { accountKeys: (string | { pubkey: string })[] };
+  };
+  meta: {
+    err: unknown;
+    fee: number;
+    loadedAddresses?: { writable: string[]; readonly: string[] };
+  };
+}
+
+function txAccountSet(tx: BlockTx): Set<string> {
+  const keys = tx.transaction.message.accountKeys ?? [];
+  const loaded = tx.meta?.loadedAddresses;
+  const accounts = new Set<string>();
+  for (const k of keys) {
+    accounts.add(typeof k === "object" ? k.pubkey : k);
+  }
+  if (loaded) {
+    for (const k of [...(loaded.writable ?? []), ...(loaded.readonly ?? [])]) {
+      accounts.add(k);
+    }
+  }
+  return accounts;
+}
+
+function txFeePayer(tx: BlockTx): string {
+  const k = tx.transaction.message.accountKeys[0];
+  return typeof k === "object" ? k.pubkey : k;
+}
+
+async function fetchBlockSwapNeighbors(
+  slot: number,
+  swaps: NormalizedSwap[],
+  apiKey: string,
+): Promise<Map<string, BlockVerification>> {
+  const results = new Map<string, BlockVerification>();
+  for (const s of swaps) {
+    results.set(s.signature, { confirmed: false });
+  }
+
+  try {
+    const res = await fetch(
+      `https://mainnet.helius-rpc.com/?api-key=${apiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "getBlock",
+          params: [
+            slot,
+            {
+              encoding: "json",
+              transactionDetails: "full",
+              maxSupportedTransactionVersion: 0,
+            },
+          ],
+        }),
+      },
+    );
+
+    if (!res.ok) return results;
+    const json = (await res.json()) as { result?: { transactions: BlockTx[] } };
+    const txs = json.result?.transactions;
+    if (!txs) return results;
+
+    for (const swap of swaps) {
+      const victimIdx = txs.findIndex(
+        (t) => t.transaction.signatures[0] === swap.signature,
+      );
+      if (victimIdx === -1) continue;
+
+      const victimAccounts = txAccountSet(txs[victimIdx]);
+      const victimWallet = txFeePayer(txs[victimIdx]);
+
+      const victimAmm = [...victimAccounts].find((a) =>
+        VULNERABLE_AMMS.has(a),
+      );
+      if (!victimAmm) continue;
+
+      const excluded = new Set([
+        ...WELL_KNOWN_PROGRAMS,
+        ...VULNERABLE_AMMS,
+        victimWallet,
+        swap.inputMint,
+        swap.outputMint,
+      ]);
+      const poolAccounts = new Set<string>();
+      for (const acc of victimAccounts) {
+        if (!excluded.has(acc)) poolAccounts.add(acc);
+      }
+
+      const searchStart = Math.max(0, victimIdx - 60);
+      const searchEnd = Math.min(txs.length, victimIdx + 60);
+
+      let frontrun: { sig: string; payer: string } | null = null;
+      let backrun: { sig: string; payer: string } | null = null;
+
+      for (let i = searchStart; i < searchEnd; i++) {
+        if (i === victimIdx) continue;
+        const tx = txs[i];
+        if (tx.meta?.err) continue;
+
+        const accounts = txAccountSet(tx);
+        const payer = txFeePayer(tx);
+        if (payer === victimWallet) continue;
+
+        if (!accounts.has(victimAmm)) continue;
+
+        let sharedCount = 0;
+        for (const a of poolAccounts) {
+          if (accounts.has(a)) sharedCount++;
+          if (sharedCount >= 2) break;
+        }
+        if (sharedCount < 2) continue;
+
+        if (i < victimIdx && !frontrun) {
+          frontrun = { sig: tx.transaction.signatures[0], payer };
+        } else if (i > victimIdx && !backrun) {
+          backrun = { sig: tx.transaction.signatures[0], payer };
+        }
+
+        if (frontrun && backrun) break;
+      }
+
+      if (frontrun && backrun) {
+        results.set(swap.signature, {
+          confirmed: true,
+          frontrunSig: frontrun.sig,
+          backrunSig: backrun.sig,
+        });
+      }
+    }
+  } catch {
+    // Block fetch failed — leave defaults (confirmed: false)
+  }
+
+  return results;
+}
+
+// ── Helpers ─────────────────────────────────────────────────────────
 
 function fmtDisplay(amount: number, decimals: number): string {
   if (amount >= 1_000_000) return (amount / 1_000_000).toFixed(2) + "M";

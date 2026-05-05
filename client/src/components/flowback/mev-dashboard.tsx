@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { ExternalLink, Copy, Check } from "lucide-react";
+import { useState, useMemo, useRef } from "react";
+import { ExternalLink, Copy, Check, CircleHelp } from "lucide-react";
+import {
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 import {
   Accordion,
   AccordionItem,
   AccordionTrigger,
   AccordionContent,
 } from "@/components/ui/accordion";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import type {
@@ -25,7 +32,7 @@ const TOKEN_COLORS: Record<string, string> = {
   JITO: "oklch(0.78 0.08 160)",
 };
 
-const SOL_PRICE_USD = 149.04;
+const SOL_PRICE_USD_FALLBACK = 150;
 
 const MEV_TYPE_STYLES: Record<MevType, { color: string; label: string }> = {
   sandwiched: { color: "oklch(0.70 0.13 25)", label: "Sandwiched" },
@@ -46,7 +53,8 @@ function shortSig(sig: string): string {
 }
 
 function timeAgo(timestamp: number): string {
-  const seconds = Math.floor((Date.now() - timestamp) / 1000);
+  const ms = timestamp < 1e12 ? timestamp * 1000 : timestamp;
+  const seconds = Math.floor((Date.now() - ms) / 1000);
   if (seconds < 60) return "just now";
   const minutes = Math.floor(seconds / 60);
   if (minutes < 60) return `${minutes}m ago`;
@@ -124,6 +132,26 @@ function MevBadge({ type }: { type: MevType }) {
   );
 }
 
+function ConfidenceBadge({ level }: { level: "high" | "medium" }) {
+  const isHigh = level === "high";
+  return (
+    <span
+      className={`inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.08em] uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
+        isHigh
+          ? "text-(--fg-muted) border-(--line-strong) bg-(--chip)"
+          : "text-(--fg-dim) border-(--line) bg-transparent"
+      }`}
+      title={
+        isHigh
+          ? "Closely matches known MEV patterns"
+          : "Unusual price impact detected - may or may not be MEV"
+      }
+    >
+      {isHigh ? "high conf." : "medium conf."}
+    </span>
+  );
+}
+
 function SwapRowContent({ swap }: { swap: AnalyzedSwap }) {
   const isBad = swap.mevType !== "clean";
   const typeColor = isBad ? MEV_TYPE_STYLES[swap.mevType].color : undefined;
@@ -197,7 +225,10 @@ function SwapRowContent({ swap }: { swap: AnalyzedSwap }) {
       </div>
 
       {/* Badge */}
-      <MevBadge type={swap.mevType} />
+      <div className="flex flex-col items-start gap-1.5">
+        <MevBadge type={swap.mevType} />
+        {isBad && <ConfidenceBadge level={swap.confidence} />}
+      </div>
 
       {/* Loss numbers */}
       <div className="flex flex-col gap-0.5 text-right font-mono text-[13px] min-w-0">
@@ -212,8 +243,23 @@ function SwapRowContent({ swap }: { swap: AnalyzedSwap }) {
             <span className="text-(--accent) font-medium">
               +{wouldNum.toFixed(3)} SOL
             </span>
-            <span className="text-[10px] text-(--fg-dim) tracking-[0.08em] uppercase">
+            <span className="text-[10px] text-(--fg-dim) tracking-[0.08em] uppercase inline-flex items-center gap-1">
               would&rsquo;ve earned
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger className="inline-grid place-items-center">
+                    <CircleHelp
+                      size={10}
+                      strokeWidth={1.5}
+                      className="text-(--fg-dim) cursor-help"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[200px]">
+                    Estimate based on mock data. Actual amounts depend on live
+                    auction results.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </span>
           </>
         ) : (
@@ -292,8 +338,9 @@ function MobileSwapRow({ swap }: { swap: AnalyzedSwap }) {
         </span>
       </div>
 
-      <div style={{ gridArea: "pill" }} className="flex items-center">
+      <div style={{ gridArea: "pill" }} className="flex items-center gap-1.5">
         <MevBadge type={swap.mevType} />
+        {isBad && <ConfidenceBadge level={swap.confidence} />}
       </div>
 
       <div
@@ -305,8 +352,23 @@ function MobileSwapRow({ swap }: { swap: AnalyzedSwap }) {
             <span className="text-(--danger) font-medium">
               &minus;{lossNum.toFixed(3)} SOL
             </span>
-            <span className="text-(--accent) font-medium">
+            <span className="text-(--accent) font-medium inline-flex items-center gap-1">
               +{wouldNum.toFixed(3)} SOL
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger className="inline-grid place-items-center">
+                    <CircleHelp
+                      size={10}
+                      strokeWidth={1.5}
+                      className="text-(--fg-dim) cursor-help"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[200px]">
+                    Estimate based on mock data. Actual amounts depend on live
+                    auction results.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </span>
           </>
         ) : (
@@ -503,16 +565,23 @@ function Sparkline({ data }: { data: MevAnalysisResult }) {
     const sorted = [...lossy].sort((a, b) => a.timestamp - b.timestamp);
     const oldest = sorted[0].timestamp;
     const newest = sorted[sorted.length - 1].timestamp;
-    const span = Math.max(newest - oldest, 86_400_000);
-    const buckets = Math.min(Math.ceil(span / 86_400_000), 90);
+    const rawSpan = newest - oldest;
+    const DAY = 86_400;
+    const span = Math.max(rawSpan, DAY);
+    const buckets = Math.max(Math.min(Math.ceil(span / DAY), 90), 2);
 
     const pts: number[] = [];
     let cumulative = 0;
 
-    for (let day = 0; day < buckets; day++) {
-      const dayEnd = oldest + (day + 1) * (span / buckets);
+    for (let i = 0; i < buckets; i++) {
+      const bucketStart = oldest + i * (span / buckets);
+      const bucketEnd = oldest + (i + 1) * (span / buckets);
       for (const s of sorted) {
-        if (s.timestamp <= dayEnd && s.timestamp > oldest + day * (span / buckets)) {
+        const inBucket =
+          i === 0
+            ? s.timestamp >= bucketStart && s.timestamp <= bucketEnd
+            : s.timestamp > bucketStart && s.timestamp <= bucketEnd;
+        if (inBucket) {
           cumulative += parseFloat(s.estimatedLossToken || "0");
         }
       }
@@ -585,7 +654,7 @@ export function MevDashboard({
 }) {
   const [tab, setTab] = useState<Tab>("all");
   const [sort, setSort] = useState<Sort>("newest");
-  const [shown, setShown] = useState(6);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const totalLostSol = useMemo(
     () =>
@@ -596,7 +665,13 @@ export function MevDashboard({
     [data.swaps],
   );
   const totalWouldSol = data.flowbackWouldReturnSol;
-  const usdLost = (totalLostSol * SOL_PRICE_USD).toFixed(2);
+  const solPriceUsd =
+    data.flowbackWouldReturnSol > 0
+      ? data.flowbackWouldReturnUsd / data.flowbackWouldReturnSol
+      : data.totalEstimatedLossUsd > 0 && totalLostSol > 0
+        ? data.totalEstimatedLossUsd / totalLostSol
+        : SOL_PRICE_USD_FALLBACK;
+  const usdLost = (totalLostSol * solPriceUsd).toFixed(2);
 
   const counts = useMemo(
     () => ({
@@ -626,6 +701,13 @@ export function MevDashboard({
     return arr;
   }, [data.swaps, tab, sort]);
 
+  const virtualizer = useVirtualizer({
+    count: swaps.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 80,
+    overscan: 10,
+  });
+
   const topPairs = useMemo(() => {
     const maxLoss = Math.max(
       ...data.topPairsByLoss.map((p) => p.lossUsd),
@@ -635,7 +717,7 @@ export function MevDashboard({
       ...p,
       label: `${p.inputMint}/${p.outputMint}`,
       pct: (p.lossUsd / maxLoss) * 100,
-      solLoss: p.lossUsd / SOL_PRICE_USD,
+      solLoss: p.lossUsd / solPriceUsd,
       worst: i === 0,
     }));
   }, [data.topPairsByLoss]);
@@ -700,8 +782,23 @@ export function MevDashboard({
 
         <Card className="bg-(--bg-elev) ring-[var(--line)] p-0 gap-0">
           <CardContent className="p-7">
-            <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-(--fg-dim) mb-4">
+            <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-(--fg-dim) mb-4 flex items-center gap-1.5">
               Estimated cashback
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger className="inline-grid place-items-center">
+                    <CircleHelp
+                      size={13}
+                      strokeWidth={1.5}
+                      className="text-(--fg-dim) cursor-help"
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-[240px]">
+                    This is an estimate based on mock auction data. Actual
+                    cashback amounts will vary once live auctions are running.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
             <div className="font-mono text-[clamp(32px,3.4vw,42px)] tracking-tight leading-none text-(--accent) font-medium">
               <span className="text-[0.65em] mr-1">+</span>
@@ -780,69 +877,70 @@ export function MevDashboard({
           </select>
         </div>
 
-        {/* Swap rows — desktop */}
-        <div className="hidden md:block">
-          <Accordion className="analyzer-accordion">
-            {swaps.slice(0, shown).map((s) => (
-              <AccordionItem key={s.signature} value={s.signature}>
-                <AccordionTrigger
-                  className="w-full p-0 hover:no-underline rounded-none border-0 items-stretch"
-                  data-clean={s.mevType === "clean" || undefined}
-                >
-                  <SwapRowContent swap={s} />
-                </AccordionTrigger>
-                {s.mevType !== "clean" && (
-                  <AccordionContent className="p-0">
-                    <EvidencePanel swap={s} />
-                  </AccordionContent>
-                )}
-              </AccordionItem>
-            ))}
-          </Accordion>
+        {/* Virtualized swap rows */}
+        <div
+          ref={scrollRef}
+          className="max-h-[600px] overflow-y-auto"
+        >
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            <Accordion className="analyzer-accordion">
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const s = swaps[virtualRow.index];
+                return (
+                  <div
+                    key={s.signature}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${virtualRow.start}px)`,
+                    }}
+                    ref={virtualizer.measureElement}
+                    data-index={virtualRow.index}
+                  >
+                    <AccordionItem value={s.signature}>
+                      <AccordionTrigger
+                        className="w-full p-0 hover:no-underline rounded-none border-0 items-stretch"
+                        data-clean={s.mevType === "clean" || undefined}
+                      >
+                        {/* Desktop row */}
+                        <div className="hidden md:block w-full">
+                          <SwapRowContent swap={s} />
+                        </div>
+                        {/* Mobile row */}
+                        <div className="md:hidden w-full">
+                          <MobileSwapRow swap={s} />
+                        </div>
+                      </AccordionTrigger>
+                      {s.mevType !== "clean" && (
+                        <AccordionContent className="p-0">
+                          <EvidencePanel swap={s} />
+                        </AccordionContent>
+                      )}
+                    </AccordionItem>
+                  </div>
+                );
+              })}
+            </Accordion>
+          </div>
         </div>
 
-        {/* Swap rows — mobile */}
-        <div className="md:hidden">
-          <Accordion className="analyzer-accordion">
-            {swaps.slice(0, shown).map((s) => (
-              <AccordionItem key={s.signature} value={s.signature}>
-                <AccordionTrigger
-                  className="w-full p-0 hover:no-underline rounded-none border-0 items-stretch"
-                  data-clean={s.mevType === "clean" || undefined}
-                >
-                  <MobileSwapRow swap={s} />
-                </AccordionTrigger>
-                {s.mevType !== "clean" && (
-                  <AccordionContent className="p-0">
-                    <EvidencePanel swap={s} />
-                  </AccordionContent>
-                )}
-              </AccordionItem>
-            ))}
-          </Accordion>
-        </div>
-
-        {/* Show more rows / load more pages */}
-        {(shown < swaps.length || onLoadMore) && (
-          <div className="px-5 py-4 flex justify-center gap-3">
-            {shown < swaps.length && (
-              <Button
-                variant="outline"
-                className="text-[13px] font-medium px-5.5 py-2 h-auto"
-                onClick={() => setShown((s) => s + 4)}
-              >
-                Show more
-              </Button>
-            )}
-            {shown >= swaps.length && onLoadMore && (
-              <Button
-                variant="outline"
-                className="text-[13px] font-medium px-5.5 py-2 h-auto"
-                onClick={onLoadMore}
-              >
-                Scan more transactions
-              </Button>
-            )}
+        {/* Load more transactions from parent */}
+        {onLoadMore && (
+          <div className="px-5 py-4 border-t border-(--line) text-center">
+            <Button
+              onClick={onLoadMore}
+              variant="outline"
+              className="font-mono text-xs"
+            >
+              Load more transactions
+            </Button>
           </div>
         )}
       </Card>
@@ -907,9 +1005,10 @@ export function MevDashboard({
 
       {/* Footer note */}
       <div className="mt-8 pt-6 border-t border-(--line) text-center text-(--fg-dim) text-[12.5px] leading-relaxed max-w-[720px] mx-auto">
-        Sandwich detection is heuristic - flagged when a same-slot atomic
-        frontrun and backrun pattern is observed against the same pool. Loss is
-        estimated against the next-block reference price.
+        Results are estimates based on price deviation analysis. Swaps marked
+        with high confidence closely match known MEV patterns. Medium confidence
+        flags unusual price impact that may or may not be MEV. Losses are
+        estimated against real-time market prices.
       </div>
     </div>
   );

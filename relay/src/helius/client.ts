@@ -30,6 +30,11 @@ export interface HeliusNativeTransfer {
   amount: number;
 }
 
+export interface HeliusInstruction {
+  programId: string;
+  innerInstructions?: { programId: string }[];
+}
+
 export interface HeliusEnhancedTransaction {
   signature: string;
   slot: number;
@@ -41,6 +46,7 @@ export interface HeliusEnhancedTransaction {
   events: { swap?: HeliusSwapEvent };
   tokenTransfers?: HeliusTokenTransfer[];
   nativeTransfers?: HeliusNativeTransfer[];
+  instructions?: HeliusInstruction[];
 }
 
 export interface FetchSwapsResult {
