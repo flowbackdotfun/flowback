@@ -59,7 +59,7 @@ function parseQuoteQuery(query: unknown): QuoteParams {
   const inputMint = requireQueryString(q, "inputMint");
   const outputMint = requireQueryString(q, "outputMint");
   const amountStr = requireQueryString(q, "amount");
-  const slippageBpsStr = requireQueryString(q, "slippageBps");
+  const slippageBpsStr = typeof q.slippageBps === "string" ? q.slippageBps : "";
 
   let amount: bigint;
   try {
@@ -69,13 +69,16 @@ function parseQuoteQuery(query: unknown): QuoteParams {
   }
   if (amount <= 0n) throw new Error("amount must be > 0");
 
-  const slippageBps = Number.parseInt(slippageBpsStr, 10);
-  if (
-    !Number.isInteger(slippageBps) ||
-    slippageBps < 0 ||
-    slippageBps > MAX_SLIPPAGE_BPS
-  ) {
-    throw new Error("slippageBps out of range");
+  let slippageBps = 0;
+  if (slippageBpsStr) {
+    slippageBps = Number.parseInt(slippageBpsStr, 10);
+    if (
+      !Number.isInteger(slippageBps) ||
+      slippageBps < 0 ||
+      slippageBps > MAX_SLIPPAGE_BPS
+    ) {
+      throw new Error("slippageBps out of range");
+    }
   }
 
   return { inputMint, outputMint, amount, slippageBps };

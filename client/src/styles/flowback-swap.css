@@ -374,7 +374,7 @@
   right: 0;
   bottom: calc(100% + 10px);
   display: grid;
-  width: 280px;
+  width: 310px;
   gap: 10px;
   border: 1px solid var(--line-strong);
   border-radius: 12px;
@@ -404,9 +404,9 @@
 }
 .slippage-presets {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, auto)) minmax(0, 1fr);
+  grid-template-columns: repeat(4, minmax(0, auto)) minmax(0, 1fr);
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
 }
 .slip-btn {
@@ -416,7 +416,7 @@
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 6px 12px;
+  padding: 6px 10px;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
@@ -600,7 +600,7 @@
     width: min(280px, calc(100vw - 48px));
   }
   .slippage-presets {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
   .slip-custom {
     grid-column: 1 / -1;

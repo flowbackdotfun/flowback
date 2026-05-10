@@ -86,6 +86,13 @@ const POPULAR_PAIRS = new Set([
   `4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R-${SOL_MINT}`, // RAY/SOL
 ]);
 
+const SOURCE_TO_AMM: Record<string, string> = {
+  RAYDIUM: "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8",
+  ORCA: "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+  METEORA: "LBUZKhRxPF3XUpBCjp4YzTKgLccjZhTSDM9YuVaPwxo",
+  PHOENIX: "PhoeNiXZ8ByJGLkxNfZRnkUfjvmuYqLR89jjFHGqdXY",
+};
+
 const MINT_SYMBOLS: Record<string, string> = {
   [SOL_MINT]: "SOL",
   EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: "USDC",
@@ -435,6 +442,17 @@ function extractFromSwapEvent(
 
   const innerSwaps = swap.innerSwaps ?? [];
 
+  let usesVulnerableAmm = innerSwaps.some((s) => VULNERABLE_AMMS.has(s.programId));
+  let isSinglePool = innerSwaps.length === 1;
+
+  if (innerSwaps.length === 0) {
+    const sourceAmm = SOURCE_TO_AMM[tx.source];
+    if (sourceAmm && VULNERABLE_AMMS.has(sourceAmm)) {
+      usesVulnerableAmm = true;
+    }
+    isSinglePool = true;
+  }
+
   return {
     signature: tx.signature,
     timestamp: tx.timestamp,
@@ -446,8 +464,8 @@ function extractFromSwapEvent(
     outputAmount,
     inputDecimals,
     outputDecimals,
-    isSinglePool: innerSwaps.length === 1,
-    usesVulnerableAmm: innerSwaps.some((s) => VULNERABLE_AMMS.has(s.programId)),
+    isSinglePool,
+    usesVulnerableAmm,
   };
 }
 

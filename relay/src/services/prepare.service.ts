@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Connection } from "@solana/web3.js";
+import { PublicKey } from "@solana/web3.js";
 import {
   AccountRole,
   address,
@@ -35,6 +36,12 @@ const JITO_DONT_FRONT_ADDRESS = address(
   "jitodontfront111111111111111111111111111111",
 );
 const MEMO_PROGRAM_ID = address("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr");
+
+const MOCK_JITO = process.env.MOCK_JITO === "true";
+const NATIVE_SOL_MINT = "So11111111111111111111111111111111111111112";
+const TOKEN_PROGRAM = address("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const ATA_PROGRAM = new PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+const SYSTEM_PROGRAM = address("11111111111111111111111111111111");
 
 // Client has 30s to sign + submit /intent. Jupiter's blockhash typically lives
 // 60-90s, leaving headroom for auction + bundle land.
@@ -85,6 +92,10 @@ export async function prepareSwap(
     throw err;
   }
 
+  const isInputSol = MOCK_JITO && input.inputMint === NATIVE_SOL_MINT;
+  const isOutputSol = MOCK_JITO && input.outputMint === NATIVE_SOL_MINT;
+  const userAddress = address(input.user);
+
   const instructions: Instruction[] = [];
   for (const ix of build.computeBudgetInstructions ?? []) {
     instructions.push(toKitInstruction(ix));
@@ -92,6 +103,12 @@ export async function prepareSwap(
   for (const ix of build.setupInstructions ?? []) {
     instructions.push(toKitInstruction(ix));
   }
+
+  if (isInputSol) {
+    const wsolAta = getWsolAta(input.user);
+    instructions.push(...wrapSolInstructions(userAddress, wsolAta, input.inputAmount));
+  }
+
   instructions.push(
     withFrontRunGuard(toKitInstruction(build.swapInstruction)),
   );
@@ -99,7 +116,11 @@ export async function prepareSwap(
     instructions.push(toKitInstruction(build.cleanupInstruction));
   }
 
-  const userAddress = address(input.user);
+  if (isOutputSol) {
+    const wsolAta = getWsolAta(input.user);
+    instructions.push(unwrapSolInstruction(userAddress, wsolAta));
+  }
+
   const latestBlockhash = await deps.connection.getLatestBlockhash("confirmed");
   const message = pipe(
     createTransactionMessage({ version: 0 }),
@@ -193,4 +214,51 @@ function toKitLookupTables(
     out[address(tableAddr)] = addrs.map((a) => address(a));
   }
   return out;
+}
+
+function getWsolAta(user: string): Address {
+  const [ata] = PublicKey.findProgramAddressSync(
+    [
+      new PublicKey(user).toBuffer(),
+      new PublicKey(TOKEN_PROGRAM as string).toBuffer(),
+      new PublicKey(NATIVE_SOL_MINT).toBuffer(),
+    ],
+    ATA_PROGRAM,
+  );
+  return address(ata.toBase58());
+}
+
+function wrapSolInstructions(user: Address, wsolAta: Address, amount: bigint): Instruction[] {
+  const transferData = new Uint8Array(12);
+  const view = new DataView(transferData.buffer);
+  view.setUint32(0, 2, true);
+  view.setBigUint64(4, amount, true);
+
+  return [
+    {
+      programAddress: SYSTEM_PROGRAM,
+      accounts: [
+        { address: user, role: AccountRole.WRITABLE_SIGNER },
+        { address: wsolAta, role: AccountRole.WRITABLE },
+      ],
+      data: transferData,
+    },
+    {
+      programAddress: TOKEN_PROGRAM,
+      accounts: [{ address: wsolAta, role: AccountRole.WRITABLE }],
+      data: new Uint8Array([17]),
+    },
+  ];
+}
+
+function unwrapSolInstruction(user: Address, wsolAta: Address): Instruction {
+  return {
+    programAddress: TOKEN_PROGRAM,
+    accounts: [
+      { address: wsolAta, role: AccountRole.WRITABLE },
+      { address: user, role: AccountRole.WRITABLE },
+      { address: user, role: AccountRole.READONLY_SIGNER },
+    ],
+    data: new Uint8Array([9]),
+  };
 }

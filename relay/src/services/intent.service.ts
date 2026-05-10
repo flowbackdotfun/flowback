@@ -240,10 +240,20 @@ async function finalizeAuction(args: FinalizeParams): Promise<void> {
       winningBidLamports: result.winnerBid?.userCashbackLamports ?? null,
     });
 
-    // Every terminal status must produce exactly one frontend event so the
-    // /status WebSocket subscriber can settle. `landed` is the exception:
-    // the cashback indexer emits `cashback_confirmed` once the on-chain
-    // CashbackSettled log is observed.
+    // In mock/demo mode the on-chain settle tx can't land (Surfpool
+    // doesn't support the Ed25519 precompile), so emit cashback directly.
+    if (
+      result.status === "landed" &&
+      result.winnerBid &&
+      process.env.MOCK_JITO === "true"
+    ) {
+      args.deps.emitter.emitCashbackConfirmed(
+        args.hintId,
+        result.winnerBid.userCashbackLamports,
+        result.bundleId ?? "demo",
+      );
+    }
+
     if (result.status === "fallback" && result.txSignature) {
       args.deps.emitter.emitFallbackExecuted(args.hintId, result.txSignature);
     } else if (result.status === "timeout") {

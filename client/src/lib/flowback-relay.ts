@@ -183,15 +183,17 @@ export async function fetchQuote(params: {
   inputMint: string;
   outputMint: string;
   amount: string;
-  slippageBps: number;
+  slippageBps?: number;
   signal?: AbortSignal;
 }): Promise<QuoteResponse> {
   const query = new URLSearchParams({
     inputMint: params.inputMint,
     outputMint: params.outputMint,
     amount: params.amount,
-    slippageBps: params.slippageBps.toString(),
   });
+  if (params.slippageBps && params.slippageBps > 0) {
+    query.set("slippageBps", params.slippageBps.toString());
+  }
 
   return relayFetch<QuoteResponse>(`/api/flowback/quote?${query.toString()}`, {
     signal: params.signal,

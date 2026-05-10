@@ -17,12 +17,10 @@ if (!MOCK_JITO && !JITO_BLOCK_ENGINE_URL) {
 }
 
 /**
- * In mock mode we additionally submit Tx3 (the relay-signed settle tx) via
- * plain RPC so the on-chain `CashbackSettled` event is emitted and the
- * indexer fires. The other 3 txs in the bundle (user swap, searcher backrun,
- * jito tip) are intentionally not submitted — they're either bound to
- * non-existent programs (mock Jupiter memo) or pointless without atomicity.
- * Only the settle tx lands.
+ * In mock mode we submit all bundle txs sequentially via plain RPC so the
+ * full flow executes on a local/forked validator (Surfpool). Tx1 (swap)
+ * runs first so tokens actually move, then Tx3 (settle) distributes
+ * cashback. Tx2 (backrun) and Tx4 (tip) are best-effort.
  */
 let mockRpcConn: Connection | null = null;
 function getMockRpcConn(): Connection {
@@ -60,29 +58,28 @@ export async function submitBundle(
   transactions: readonly Base64EncodedWireTransaction[],
 ): Promise<string> {
   if (MOCK_JITO) {
-    const bundleId = randomUUID();
-    console.log("[jito-mock] submitBundle →", bundleId, `(${transactions.length} txs)`);
+    console.log("[jito-mock] submitBundle →", `(${transactions.length} txs)`);
 
-    // Land Tx3 (settle tx) on-chain so `CashbackSettled` is emitted and the
-    // indexer can pick it up. Best-effort: failures are logged, not fatal.
-    if (transactions.length >= 3) {
-      const settleTxB64 = transactions[2]!;
+    const conn = getMockRpcConn();
+    let swapSig: string | undefined;
+
+    const labels = ["swap (Tx1)", "backrun (Tx2)", "settle (Tx3)", "tip (Tx4)"];
+    for (let i = 0; i < transactions.length; i++) {
+      const txB64 = transactions[i]!;
+      const label = labels[i] ?? `Tx${i + 1}`;
       try {
-        const conn = getMockRpcConn();
         const sig = await conn.sendRawTransaction(
-          Buffer.from(settleTxB64, "base64"),
-          { skipPreflight: false, maxRetries: 0 },
+          Buffer.from(txB64, "base64"),
+          { skipPreflight: i !== 0, maxRetries: 0 },
         );
         await conn.confirmTransaction(sig, "confirmed");
-        console.log(`[jito-mock] settle tx landed via plain RPC: ${sig}`);
+        console.log(`[jito-mock] ${label} landed: ${sig}`);
+        if (i === 0) swapSig = sig;
       } catch (err) {
-        console.error(
-          "[jito-mock] settle tx submit failed:",
-          (err as Error).message,
-        );
+        console.error(`[jito-mock] ${label} failed: ${(err as Error).message}`);
       }
     }
-    return bundleId;
+    return swapSig ?? randomUUID();
   }
 
   const txs = transactions.map((b64) =>

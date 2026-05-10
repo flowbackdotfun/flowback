@@ -26,6 +26,7 @@ import {
   submitIntent,
   subscribeToAuctionStatus,
   TOKENS,
+  RelayRequestError,
   type JupiterQuote,
   type QuoteResponse,
   type SwapDirection,
@@ -35,6 +36,9 @@ import {
 const SLIPPAGE_PRESETS = [0.1, 0.5, 1];
 const JUPITER_SLIPPAGE_MIN = 0.1;
 const JUPITER_SLIPPAGE_MAX = 50;
+const AUTO_SLIPPAGE_BPS = 0; // 0 → relay sends slippageBps=rtse to Jupiter
+const AUTO_SLIPPAGE_FLOOR_BPS = 300; // execution floor for forks — RTSE is accurate on mainnet
+const IS_FORK = process.env.NEXT_PUBLIC_IS_FORK === "true";
 const SOL_FEE_RESERVE_LAMPORTS = BigInt(10_000_000);
 const QUOTE_DEBOUNCE_MS = 350;
 const STATUS_TIMEOUT_MS = 90_000;
@@ -191,15 +195,17 @@ function WalletModal({ onClose }: { onClose: () => void }) {
 }
 
 export function RouteDetails({
+  autoSlippageDisplay,
   priceImpact,
   routeLabel,
   slippage,
   setSlippage,
 }: {
+  autoSlippageDisplay: number | null;
   priceImpact: string | null;
   routeLabel: string;
-  slippage: number;
-  setSlippage: (value: number) => void;
+  slippage: number | null;
+  setSlippage: (value: number | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const slipRef = useRef<HTMLSpanElement>(null);
@@ -224,6 +230,13 @@ export function RouteDetails({
     };
   }, [open]);
 
+  const isAuto = slippage === null;
+  const slippageLabel = isAuto
+    ? autoSlippageDisplay !== null
+      ? `${autoSlippageDisplay}% (Auto)`
+      : "Auto"
+    : `${slippage}%`;
+
   return (
     <div className="swap-meta">
       <div className="row">
@@ -241,7 +254,7 @@ export function RouteDetails({
             onClick={() => setOpen((current) => !current)}
             type="button"
           >
-            {slippage}%
+            {slippageLabel}
             <svg
               aria-hidden="true"
               className="caret"
@@ -264,6 +277,14 @@ export function RouteDetails({
             >
               <div className="label">Max slippage</div>
               <div className="slippage-presets">
+                <button
+                  className="slip-btn"
+                  data-active={isAuto}
+                  onClick={() => setSlippage(null)}
+                  type="button"
+                >
+                  Auto
+                </button>
                 {SLIPPAGE_PRESETS.map((preset) => (
                   <button
                     className="slip-btn"
@@ -290,13 +311,15 @@ export function RouteDetails({
                   placeholder="custom"
                   type="text"
                   value={
-                    SLIPPAGE_PRESETS.includes(slippage) ? "" : String(slippage)
+                    isAuto || SLIPPAGE_PRESETS.includes(slippage!)
+                      ? ""
+                      : String(slippage)
                   }
                 />
               </div>
               <div className="slippage-note">
-                Your transaction reverts if price moves beyond this. Allowed
-                range: {JUPITER_SLIPPAGE_MIN}% to {JUPITER_SLIPPAGE_MAX}%.
+                Auto uses Jupiter RTSE for optimal slippage. Override with a
+                preset or custom value.
               </div>
             </div>
           ) : null}
@@ -323,7 +346,7 @@ export function SwapCard({
   const { connected, publicKey, signTransaction } = useWallet();
   const [direction, setDirection] = useState<SwapDirection>("buy");
   const [amountIn, setAmountIn] = useState("1");
-  const [slippage, setSlippage] = useState(0.5);
+  const [slippage, setSlippage] = useState<number | null>(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [swapping, setSwapping] = useState(false);
   const [flipping, setFlipping] = useState(false);
@@ -333,9 +356,11 @@ export function SwapCard({
     values: EMPTY_BALANCES,
   });
   const [status, setStatus] = useState<StatusState | null>(null);
+  const swappingRef = useRef(false);
   const flipTimerRef = useRef<number | null>(null);
   const statusCleanupRef = useRef<(() => void) | null>(null);
   const statusTimeoutRef = useRef<number | null>(null);
+  swappingRef.current = swapping;
 
   const inputToken = inputTokenForDirection(direction);
   const outputToken = outputTokenForDirection(direction);
@@ -344,9 +369,14 @@ export function SwapCard({
     [amountIn, inputToken.decimals],
   );
   const hasAmount = amountRaw !== null;
-  const slippageBps = Math.round(slippage * 100);
+  const isAutoSlippage = slippage === null;
+  const slippageBps = isAutoSlippage
+    ? AUTO_SLIPPAGE_BPS
+    : Math.round(slippage * 100);
   const activeQuote =
     quoteState.status === "ready" ? quoteState.data.quote : null;
+  const autoSlippageDisplay =
+    isAutoSlippage && activeQuote ? activeQuote.slippageBps / 100 : null;
   const cashbackEstimate =
     quoteState.status === "ready"
       ? (quoteState.data.cashbackEstimate?.lamports ?? null)
@@ -437,27 +467,35 @@ export function SwapCard({
     }
 
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => {
-      setQuoteState({ status: "loading" });
+    const amount = amountRaw;
+
+    function doFetch(showLoading: boolean) {
+      if (showLoading) setQuoteState({ status: "loading" });
       fetchQuote({
         inputMint: inputToken.mint,
         outputMint: outputToken.mint,
-        amount: amountRaw,
+        amount,
         slippageBps,
         signal: controller.signal,
       })
         .then((data) => setQuoteState({ status: "ready", data }))
         .catch((error: unknown) => {
           if (controller.signal.aborted) return;
-          setQuoteState({
-            status: "error",
-            message: getErrorMessage(error, "Quote unavailable"),
-          });
+          if (showLoading) {
+            setQuoteState({
+              status: "error",
+              message: getErrorMessage(error, "Quote unavailable"),
+            });
+          }
         });
+    }
+
+    const debounce = window.setTimeout(() => {
+      doFetch(true);
     }, QUOTE_DEBOUNCE_MS);
 
     return () => {
-      window.clearTimeout(timeout);
+      window.clearTimeout(debounce);
       controller.abort();
     };
   }, [amountRaw, inputToken.mint, outputToken.mint, slippageBps]);
@@ -549,13 +587,19 @@ export function SwapCard({
     setStatus({ tone: "info", message: "Preparing transaction..." });
 
     try {
+      const execSlippageBps = isAutoSlippage
+        ? IS_FORK
+          ? Math.max(quote.slippageBps, AUTO_SLIPPAGE_FLOOR_BPS)
+          : quote.slippageBps
+        : slippageBps;
+
       const prepared = await prepareSwap({
         user: publicKey.toBase58(),
         inputMint: inputToken.mint,
         outputMint: outputToken.mint,
         inputAmount: quote.inAmount,
         minOutputAmount: quote.otherAmountThreshold,
-        maxSlippageBps: slippageBps,
+        maxSlippageBps: execSlippageBps,
       });
 
       const transaction = deserializeTransaction(prepared.unsignedTx);
@@ -570,7 +614,25 @@ export function SwapCard({
       });
 
       if (simulation.value.err) {
-        throw new Error("Simulation failed. Refresh the quote and try again.");
+        const simErr = simulation.value.err;
+        let detail = "";
+        if (typeof simErr === "object" && simErr !== null) {
+          const inner = (simErr as Record<string, unknown>).InstructionError;
+          if (Array.isArray(inner) && inner[1]) {
+            const code = inner[1];
+            if (typeof code === "object" && code !== null && "Custom" in code) {
+              const custom = (code as { Custom: number }).Custom;
+              if (custom === 6001) detail = " (slippage exceeded)";
+              else if (custom === 1) detail = " (insufficient funds)";
+              else detail = ` (code ${custom})`;
+            } else if (typeof code === "string") {
+              detail = ` (${code})`;
+            }
+          }
+        }
+        throw new Error(
+          `Simulation failed${detail}. Refresh the quote and try again.`,
+        );
       }
 
       setStatus({ tone: "info", message: "Submitting intent..." });
@@ -756,7 +818,7 @@ export function SwapCard({
             <div className="left">
               <span>FlowBack cashback</span>
             </div>
-            <div className={`value${hasAmount ? "" : " empty"}`}>
+            <div className={`value${hasAmount ? "" : "empty"}`}>
               {getCashbackLabel(quoteState.status, cashbackEstimate)}
             </div>
           </div>
@@ -798,6 +860,7 @@ export function SwapCard({
         </div>
 
         <RouteDetails
+          autoSlippageDisplay={autoSlippageDisplay}
           priceImpact={priceImpact}
           routeLabel={routeLabel}
           setSlippage={setSlippage}
@@ -889,7 +952,26 @@ function formatPriceImpact(value: string) {
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof RelayRequestError) {
+    if (error.status === 502)
+      return "Jupiter is temporarily unavailable. Try again in a moment.";
+    if (error.status === 400) return error.message;
+    return error.message || fallback;
+  }
+  if (error instanceof Error) {
+    const msg = error.message;
+    if (msg.includes("User rejected") || msg.includes("user rejected"))
+      return "Transaction rejected in wallet.";
+    if (msg.includes("Simulation failed"))
+      return "Simulation failed — price may have moved. Refresh quote and try again.";
+    if (msg.includes("too large"))
+      return "Transaction too large. Try a simpler route or smaller amount.";
+    if (msg.includes("insufficient") || msg.includes("Insufficient"))
+      return "Insufficient balance for this swap.";
+    if (msg.includes("blockhash") || msg.includes("Blockhash"))
+      return "Transaction expired. Please try again.";
+    if (msg) return msg;
+  }
   return fallback;
 }
 

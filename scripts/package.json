@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "demo": "tsx demo-setup.ts",
     "init": "tsx init-protocol.ts",
     "searcher": "tsx searcher-bot.ts",
     "intent": "tsx send-intent.ts",

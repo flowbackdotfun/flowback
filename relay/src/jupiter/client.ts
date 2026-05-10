@@ -2,12 +2,13 @@ import "dotenv/config";
 
 const MOCK_JUPITER = process.env.MOCK_JUPITER === "true";
 
-const JUPITER_API_URL = process.env.JUPITER_API_URL;
 const JUPITER_BUILD_API_URL = process.env.JUPITER_BUILD_API_URL;
 const JUPITER_API_KEY = process.env.JUPITER_API_KEY;
+const JUPITER_DEXES = process.env.JUPITER_DEXES;
+const JUPITER_DIRECT_ROUTES = process.env.JUPITER_DIRECT_ROUTES === "true";
+const MOCK_JITO = process.env.MOCK_JITO === "true";
 
 if (!MOCK_JUPITER) {
-  if (!JUPITER_API_URL) throw new Error("JUPITER_API_URL is not set");
   if (!JUPITER_BUILD_API_URL) throw new Error("JUPITER_BUILD_API_URL is not set");
   if (!JUPITER_API_KEY) throw new Error("JUPITER_API_KEY is not set");
 }
@@ -76,6 +77,60 @@ export interface JupiterBuildResponse {
   [key: string]: unknown;
 }
 
+/**
+ * Uses the /build endpoint for both quote and build — same routing
+ * constraints (dexes, onlyDirectRoutes) are always applied.
+ * For quote-only calls, a dummy taker is used since we just need pricing.
+ */
+const DUMMY_TAKER = "11111111111111111111111111111111";
+
+function buildQuery(params: {
+  inputMint: string;
+  outputMint: string;
+  amount: string;
+  taker: string;
+  slippageBps?: number;
+  tipAmount?: string;
+}): URLSearchParams {
+  const query = new URLSearchParams({
+    inputMint: params.inputMint,
+    outputMint: params.outputMint,
+    amount: params.amount,
+    taker: params.taker,
+  });
+  if (params.slippageBps !== undefined && params.slippageBps > 0) {
+    query.set("slippageBps", params.slippageBps.toString());
+  } else {
+    query.set("slippageBps", "rtse");
+  }
+  if (params.tipAmount !== undefined) {
+    query.set("tipAmount", params.tipAmount);
+  }
+  if (JUPITER_DEXES) {
+    query.set("dexes", JUPITER_DEXES);
+  }
+  if (JUPITER_DIRECT_ROUTES) {
+    query.set("onlyDirectRoutes", "true");
+  }
+  query.set("maxAccounts", "54");
+  if (MOCK_JITO) {
+    query.set("wrapAndUnwrapSol", "false");
+  }
+  return query;
+}
+
+async function fetchBuild(query: URLSearchParams): Promise<JupiterBuildResponse> {
+  const url = `${JUPITER_BUILD_API_URL}/build?${query.toString()}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { "x-api-key": JUPITER_API_KEY! },
+  });
+  if (!res.ok) {
+    throw new JupiterError("/build", res.status, await res.text());
+  }
+  return (await res.json()) as JupiterBuildResponse;
+}
+
 export async function getQuote(
   inputMint: string,
   outputMint: string,
@@ -98,21 +153,16 @@ export async function getQuote(
     };
   }
 
-  const params = new URLSearchParams({
+  const query = buildQuery({
     inputMint,
     outputMint,
     amount: amount.toString(),
-    slippageBps: slippageBps.toString(),
+    taker: DUMMY_TAKER,
+    slippageBps,
   });
 
-  const url = `${JUPITER_API_URL}/quote?${params.toString()}`;
-  const res = await fetch(url);
-
-  if (!res.ok) {
-    throw new JupiterError("/quote", res.status, await res.text());
-  }
-
-  return (await res.json()) as JupiterQuoteResponse;
+  const build = await fetchBuild(query);
+  return build as unknown as JupiterQuoteResponse;
 }
 
 export interface BuildSwapParams {
@@ -141,7 +191,6 @@ export async function buildSwap(
       priceImpactPct: "0.10",
       routePlan: [],
       setupInstructions: [],
-      // Memo program — no accounts, no signers, compiles cleanly
       swapInstruction: {
         programId: "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr",
         accounts: [],
@@ -152,7 +201,6 @@ export async function buildSwap(
       otherInstructions: [],
       tipInstruction: null,
       addressesByLookupTableAddress: {},
-      // 32 zero bytes in base58 — valid blockhash format
       blockhashWithMetadata: {
         blockhash: "11111111111111111111111111111111",
         lastValidBlockHeight: 999_999_999,
@@ -160,31 +208,14 @@ export async function buildSwap(
     };
   }
 
-  const query = new URLSearchParams({
+  const query = buildQuery({
     inputMint: params.inputMint,
     outputMint: params.outputMint,
     amount: params.amount.toString(),
     taker: params.taker,
+    slippageBps: params.slippageBps,
+    tipAmount: params.tipAmount?.toString(),
   });
 
-  if (params.slippageBps !== undefined) {
-    query.set("slippageBps", params.slippageBps.toString());
-  }
-  if (params.tipAmount !== undefined) {
-    query.set("tipAmount", params.tipAmount.toString());
-  }
-
-  const url = `${JUPITER_BUILD_API_URL}/build?${query.toString()}`;
-  const res = await fetch(url, {
-    method: "GET",
-    headers: {
-      "x-api-key": JUPITER_API_KEY!,
-    },
-  });
-
-  if (!res.ok) {
-    throw new JupiterError("/build", res.status, await res.text());
-  }
-
-  return (await res.json()) as JupiterBuildResponse;
+  return fetchBuild(query);
 }
