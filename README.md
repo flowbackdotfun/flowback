@@ -37,9 +37,7 @@ sequenceDiagram
     participant U as User
     participant R as Relay
     participant S as Searcher
-    participant E as Escrow PDA
     participant P as Program
-    participant T as Treasury
     participant J as Jito
 
     U->>R: swap intent
@@ -49,13 +47,12 @@ sequenceDiagram
     S->>R: bid (sig, backrunTx, tipTx)
     Note over R: 200ms auction closes
     R->>S: auction_result
-    R->>P: settle_from_escrow (Tx3)
-    R->>J: 4-tx bundle
+    R->>J: 4-tx Jito bundle
     J->>P: bundle lands on-chain
-    E->>P: debit bid + reimbursement
+    P->>P: verify bid, debit escrow
     P->>U: 90% cashback (SOL)
     P->>R: relay reimbursement
-    P->>T: 10% protocol fee
+    Note over P: 10% → protocol treasury
 ```
 
 1. User enters a swap (e.g. 2 SOL → USDC) in the frontend
@@ -159,8 +156,8 @@ flowback/
 │
 ├── client/                   Next.js frontend
 │   └── src/
-│       ├── app/                    Pages (landing, /swap, /calculator)
-│       ├── components/flowback/    SwapCard, MevDashboard, CashbackToast
+│       ├── app/                    Pages (landing, /swap)
+│       ├── components/flowback/    SwapCard, CashbackToast
 │       ├── components/ui/          shadcn component library
 │       └── lib/                    Relay API client, wallet helpers
 │
