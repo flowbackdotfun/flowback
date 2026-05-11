@@ -1,36 +1,140 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+<p align="center">
+  <img src="public/brand/flowback-mark.png" alt="FlowBack" width="80" />
+</p>
 
-## Getting Started
+<h3 align="center">Flowback-Web</h3>
 
-First, run the development server:
+<p align="center">
+  Swap interface for FlowBack.
+</p>
+
+---
+
+## Overview
+
+The FlowBack frontend provides two core experiences:
+
+- **Swap Interface** (`/swap`) - Connect your wallet, enter a swap, sign the prepared transaction, and watch real-time auction results with cashback confirmation
+
+The swap flow communicates with the relay via REST (quote → prepare → intent) and WebSocket (real-time auction status updates). Users sign a **prepared transaction**, not a freeform message - the relay validates signature-to-message bytes integrity.
+
+---
+
+## Pages
+
+| Route   | Component   | Description                                 |
+| ------- | ----------- | ------------------------------------------- |
+| `/`     | LandingPage | Marketing page with hero, how-it-works, FAQ |
+| `/swap` | SwapCard    | Main swap interface with wallet connection  |
+
+---
+
+## Key Components
+
+| Component       | Description                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------- |
+| `SwapCard`      | Debounced quote fetching, slippage config, multi-step swap flow (quote → prepare → sign → submit) |
+| `MevDashboard`  | Historical swap analysis with MEV breakdown by type (sandwich, frontrun, backrun)                 |
+| `CashbackToast` | Green slide-in notification on `cashback_confirmed`                                               |
+| `Nav`           | Navigation bar with theme toggle, wallet connect, mobile menu                                     |
+
+---
+
+## Environment Variables
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# Solana RPC endpoint (defaults to mainnet-beta if unset)
+NEXT_PUBLIC_SOLANA_RPC_URL=http://127.0.0.1:8899
+
+# Relay WebSocket URL for auction status updates
+NEXT_PUBLIC_RELAY_WS_URL=ws://localhost:3002
+
+# Documentation site URL
+NEXT_PUBLIC_DOCS_URL=http://localhost:3001
+
+# Fork mode flag (relaxes slippage handling for Surfpool)
+NEXT_PUBLIC_IS_FORK=true
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The relay REST URL is hardcoded to `http://localhost:3001` in `lib/flowback-relay.ts`. Update it there for production.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Development
 
-## Learn More
+### Prerequisites
 
-To learn more about Next.js, take a look at the following resources:
+- Node.js 20+
+- pnpm 10+
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Setup
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+cd client
+pnpm install
+```
 
-## Deploy on Vercel
+### Run
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+pnpm dev          # Development server on http://localhost:3000
+pnpm build        # Production build
+pnpm start        # Serve production build
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+### Wallet Setup (Local Dev)
+
+When running against a local validator (Surfpool), configure your wallet:
+
+1. Open Phantom → Settings → Developer Settings → Solana → Change Network
+2. Set custom RPC to `http://127.0.0.1:8899`
+3. Airdrop SOL to your wallet:
+   ```bash
+   solana airdrop 10 <YOUR_WALLET_ADDRESS> --url http://127.0.0.1:8899
+   ```
+
+---
+
+## Stack
+
+| Dependency                   | Purpose                               |
+| ---------------------------- | ------------------------------------- |
+| Next.js 16                   | React framework (App Router)          |
+| React 19                     | UI library                            |
+| Tailwind CSS v4              | Styling                               |
+| shadcn + @base-ui/react      | Component library                     |
+| @solana/wallet-adapter-react | Wallet connection (Phantom, Solflare) |
+| @solana/web3.js              | Transaction signing and RPC           |
+| lucide-react                 | Icons                                 |
+| tw-animate-css               | Animations                            |
+
+---
+
+## Project Structure
+
+```
+src/
+├── app/
+│   ├── page.tsx                  Landing page
+│   ├── swap/page.tsx             Swap interface
+│   └── layout.tsx                Root layout + wallet provider
+├── components/
+│   ├── flowback/                 Brand components
+│   │   ├── swap-card.tsx         Main swap interface
+│   │   ├── mev-dashboard.tsx     MEV analysis visualization
+│   │   ├── cashback-toast.tsx    Cashback notification
+│   │   ├── nav.tsx               Navigation bar
+│   │   ├── landing-page.tsx      Landing orchestrator
+│   │   └── sections/             Landing page sections
+│   └── ui/                       shadcn component library
+├── lib/
+│   ├── flowback-relay.ts         Relay API client + types
+│   ├── hooks/                    Custom React hooks
+│   └── utils.ts                  Tailwind merge utility
+├── providers/
+│   └── wallet-provider.tsx       Solana wallet adapter setup
+└── styles/
+    ├── flowback-swap.css         Swap page styles
+    ├── flowback-calculator.css   Calculator styles
+    └── flowback-surfaces.css     Shared surface styles
+```

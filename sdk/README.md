@@ -1,6 +1,6 @@
 # @flowback/searcher
 
-Searcher-facing TypeScript SDK for [FlowBack](https://github.com/flowback/flowback) — a Solana sealed-bid backrun auction with on-chain cashback.
+Searcher-facing TypeScript SDK for [FlowBack](https://github.com/flowback/flowback) - a Solana sealed-bid backrun auction with on-chain cashback.
 
 Connect to the relay, sign bid commitments, manage your escrow, and assemble Jito bundles.
 
@@ -94,7 +94,7 @@ This lets the relay attribute bids to specific searchers and rate-limit per pubk
 
 `connect()` handles this for you. It builds the auth payload, signs it with your `Signer`, sends it on open, and resolves only after the relay returns `auth_ok`. It rejects on timeout or `auth_error`.
 
-The timestamp must be within ±60s of the relay clock — the SDK uses `Date.now()`.
+The timestamp must be within ±60s of the relay clock - the SDK uses `Date.now()`.
 
 If you ever need the raw payload (e.g. to sign offline or proxy the connection through your own service), `buildAuthMessage(signer, timestamp?)` is exported.
 
@@ -142,7 +142,7 @@ Fund the escrow with `buildEscrowDepositTx`. Pull idle balance with `buildEscrow
 
 ### Bundles
 
-Searchers supply two transactions — a backrun and a Jito tip.
+Searchers supply two transactions - a backrun and a Jito tip.
 
 The relay assembles the final bundle:
 
@@ -162,7 +162,7 @@ The SDK gives you `buildJitoTipTx` for the tip leg. The backrun is your own logi
 
 ```ts
 interface ClientConfig {
-  relayUrl: string;   // ws:// or wss:// — relay's /searcher endpoint
+  relayUrl: string;   // ws:// or wss:// - relay's /searcher endpoint
   signer: Signer;     // your Ed25519 signer (see `keypairSigner`)
   programId: string;  // FlowBack on-chain program id
   rpcUrl: string;     // Solana RPC for blockhash fetching
@@ -234,7 +234,7 @@ interface Signer {
 
 ```ts
 import {
-  JITO_TIP_ACCOUNTS,      // hardcoded snapshot — 8 mainnet accounts
+  JITO_TIP_ACCOUNTS,      // hardcoded snapshot - 8 mainnet accounts
   fetchJitoTipAccounts,   // optional refresh via getTipAccounts RPC
   pickJitoTipAccount,
 } from "@flowback/searcher";
@@ -271,4 +271,4 @@ import {
 
 ## License
 
-MIT — see [LICENSE](./LICENSE).
+MIT - see [LICENSE](./LICENSE).

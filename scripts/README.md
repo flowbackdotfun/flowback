@@ -1,189 +1,139 @@
-# FlowBack end-to-end test scripts
+<p align="center">
+  <img src="../client/public/brand/flowback-mark.png" alt="FlowBack" width="80" />
+</p>
 
-Three scripts that drive a full auction cycle against a local validator + relay:
+<h3 align="center">Flowback-Scripts</h3>
 
-- `init-protocol.ts` — runs `initialize` on the deployed program (one-time per validator).
-- `searcher-bot.ts` — connects via `@flowback/searcher`, ensures escrow funded, listens for hints, signs bid commitments, submits bids. Runs N copies in parallel for a multi-searcher auction.
-- `send-intent.ts` — impersonates a frontend user: `POST /prepare` → sign → `POST /intent`, then listens on the user status WS for the outcome.
-
-All scripts persist their generated keypairs under `scripts/keys/` so subsequent runs reuse the same identities (so escrow PDAs stay valid across restarts).
-
----
-
-## One-time setup
-
-```bash
-cd /home/deep1910/Hacks/Flowback
-pnpm --dir sdk install && pnpm --dir sdk build         # SDK must be built so scripts can resolve dist/
-pnpm --dir scripts install
-```
+<p align="center">
+  Protocol initialization, searcher bots, and demo setup scripts.
+</p>
 
 ---
 
-## Run order (six terminals)
+## Overview
 
-### Terminal 1 — local validator
+Standalone scripts for bootstrapping and operating a local FlowBack environment. Includes:
+
+- **Demo setup** - one-shot script that funds wallets, deploys the program, and initializes the protocol
+- **Protocol init** - creates the on-chain `ProtocolConfig` PDA
+- **Searcher bot** - connects to the relay, receives hints, and bids in auctions
+- **Send intent** - simulates a user swap through the full auction lifecycle
+- **Verify reimbursement** - audits settlement transactions for correctness
+
+---
+
+## Scripts
+
+### `pnpm demo` - Automated Demo Setup
+
+One-command setup for the entire local environment:
+
+1. Checks RPC connectivity to local validator
+2. Funds the authority wallet (10 SOL)
+3. Deploys the FlowBack Anchor program (if not already deployed)
+4. Initializes the protocol config (10% fee, treasury wallet)
+5. Funds the relay keypair (5 SOL, extracted from `relay/.env`)
+6. Funds the searcher bot keypair (5 SOL)
 
 ```bash
-solana-test-validator --reset
+pnpm demo
 ```
 
-### Terminal 2 — postgres (the relay needs a DB)
+### `pnpm init` - Initialize Protocol
+
+One-time setup. Creates the `ProtocolConfig` PDA on-chain with protocol fee and treasury settings. Idempotent - skips if config already exists.
 
 ```bash
-# any local postgres works; if you don't have one running:
-docker run --rm -p 5432:5432 -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=flowback postgres:16
-# then in relay/.env: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/flowback
-```
-
-### Terminal 3 — deploy the Anchor program
-
-```bash
-cd anchor/flowback
-anchor build --ignore-keys
-solana config set --url http://localhost:8899
-solana program deploy target/deploy/flowback.so --program-id target/deploy/flowback-keypair.json
-```
-
-Note the printed program id and put it in `relay/.env` as `FLOWBACK_PROGRAM_ID` (and `scripts/lib/util.ts`'s `DEFAULT_PROGRAM_ID` if it differs from the hardcoded one).
-
-### Terminal 4 — initialise protocol + run the relay
-
-```bash
-# 4a. Initialise (one-time, idempotent)
-cd scripts
 pnpm init
-# Note the printed treasury pubkey — paste into relay/.env as TREASURY_WALLET.
-
-# 4b. Configure relay/.env (minimum):
-cat > ../relay/.env <<'EOF'
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/flowback
-SOLANA_RPC_URL=http://localhost:8899
-FLOWBACK_PROGRAM_ID=BLZeEY7GZ5AK6gAZQW5BVi9w71yoJig4Kc97bL1HAnP8
-TREASURY_WALLET=<paste from step 4a>
-RELAY_KEYPAIR=<paste your CLI keypair JSON array from ~/.config/solana/id.json>
-MOCK_JUPITER=true
-MOCK_JITO=true
-AUCTION_WINDOW_MS=200
-PROTOCOL_FEE_BPS=1000
-ALLOWED_ORIGIN=http://localhost:3000
-REST_PORT=3001
-WS_PORT=3002
-EOF
-
-# 4c. Start the relay (this also runs the on-chain log indexer in-process)
-cd ../relay
-pnpm install
-pnpm dev
 ```
 
-You should see: `[relay] http listening on :3001` and `[relay] ws listening on :3002`.
+### `pnpm searcher <index>` - Run Searcher Bot
 
-### Terminal 5 — start N searcher bots
+Connects to the relay's `/searcher` WebSocket, authenticates, and bids on every hint.
 
 ```bash
-cd scripts
-
-# Three bots in parallel — each lazily inits its own escrow PDA + funds it.
-pnpm searcher 0 &
-pnpm searcher 1 &
-pnpm searcher 2 &
-wait
+pnpm searcher 0    # Bot index 0 (lowest bids)
+pnpm searcher 1    # Bot index 1 (higher bids)
+pnpm searcher 2    # Bot index 2 (highest bids)
 ```
 
-Each bot:
+Each bot index produces different bid amounts (~1M + index × 200k lamports + jitter). Run multiple bots to simulate competitive auctions.
 
-1. Generates / loads its keypair from `scripts/keys/searcher-N.json`.
-2. Airdrops itself if the local balance is below 4 SOL.
-3. Calls `escrow_init` (skipped if PDA exists) and tops up to 2 SOL of usable escrow.
-4. Connects to the relay's `/searcher` WS, completes the auth handshake.
-5. On every hint, signs a bid commitment and submits a bid with a placeholder memo backrun.
+On first run, the bot:
+- Generates a keypair at `scripts/keys/searcher-{index}.json`
+- Airdrops 4 SOL
+- Initializes and funds the escrow PDA (2 SOL usable balance)
 
-Bid amounts include a per-bot offset + jitter so the winner is deterministic per auction (highest BOT_INDEX usually wins).
+### `pnpm intent` - Send User Swap Intent
 
-### Terminal 6 — fire an intent
+Simulates a user swap through the full lifecycle: prepare → sign → submit intent → monitor auction via WebSocket.
 
 ```bash
-cd scripts
 pnpm intent
 ```
 
-The script will:
+### `pnpm verify <tx-signature> [expected-bid]` - Verify Settlement
 
-1. Hit `POST /prepare` with mock mints (any 32-char base58 — `MOCK_JUPITER=true` swaps in a memo ix).
-2. Sign the returned v0 transaction with the user's keypair.
-3. Hit `POST /intent` with `{ prepareId, signedTx }`.
-4. Subscribe to the user-status WS and log every event until `cashback_confirmed` or `fallback_executed`.
-
----
-
-## What "success" looks like
-
-In the relay log:
-
-```
-[relay] auction <hintId> opened
-[relay] auction <hintId>: 3 bids received
-[relay] picked winner searcher-2 (1700000 lamports)
-[jito-mock] submitBundle → <bundle-uuid> (4 txs)
-```
-
-In each searcher log:
-
-```
-[searcher-2] ▲ bid    hint=ab12cd34  bid=1700000  in 28ms
-[searcher-2] 🏆 WON   hint=ab12cd34  yours=1700000  winning=1700000
-```
-
-In the intent log:
-
-```
-[intent] ← bundle_submitted { auctionId, bundleId }
-[intent] ← cashback_confirmed { auctionId, ... }    # or fallback_executed
-```
-
----
-
-## What this verifies (and what it doesn't)
-
-**Verified end-to-end:**
-
-- User signing → relay ingestion → auction kickoff
-- WS auth + hint broadcast to multiple connected searchers
-- SDK builds correct bid-commitment signatures that pass the relay's tier-1 Ed25519 verify
-- AuctionManager picks the highest bid and resolves on the 200ms timer
-- Bundle constructor builds the relay-signed Tx3 (Ed25519 ix + `settle_from_escrow`) without throwing
-- Tier-2 simulation runs against the dummy memo backrun
-- Mock Jito returns "landed" → user-status WS fires the right events
-- Auction result is delivered back to all bidding searchers
-
-**Not verified by this flow** (these need a live Jito Block Engine):
-
-- Actual on-chain settlement: with `MOCK_JITO=true` the bundle never lands. Searcher escrow doesn't get debited; user doesn't get cashback. The on-chain side is already exhaustively covered by `cargo test -p flowback` (litesvm tests), so this is a deliberate split — off-chain flow goes through the scripts, on-chain semantics go through litesvm.
-- Real Jupiter routing: `MOCK_JUPITER=true` substitutes a memo ix. Real-route testing requires `MOCK_JUPITER=false` and a Jupiter API key.
-
----
-
-## Multiple intents in one run
-
-To stress-test the auction loop, run `pnpm intent` repeatedly while the searcher bots stay connected:
+Audits a settlement transaction for correct relay reimbursement, user/treasury credits, and lamport conservation.
 
 ```bash
-for i in 1 2 3 4 5; do pnpm intent; sleep 1; done
+pnpm verify <TRANSACTION_SIGNATURE> 1000000
 ```
-
-Each run uses the same user keypair (so the same escrow / wallet) but a fresh `prepareId` + `hintId`, so the auction's replay protection (per-`hintId` `UsedHint` PDA on-chain) is also exercised — even though the bundle doesn't land in mock mode, the relay's settle-tx construction includes a fresh hint id every time.
 
 ---
 
-## Cleanup
+## Environment Variables
 
-```bash
-# stop the validator
-pkill solana-test-validator
+All scripts use defaults from `lib/util.ts`. Override via env vars:
 
-# wipe local-only state (keypairs + ledger)
-rm -rf scripts/keys/*.json test-ledger
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SOLANA_RPC_URL` | `http://localhost:8899` | Solana RPC endpoint |
+| `RELAY_REST_URL` | `http://localhost:3001` | Relay REST API |
+| `RELAY_WS_URL` | `ws://localhost:3002` | Relay WebSocket |
+| `FLOWBACK_PROGRAM_ID` | `D3T1iprZ1D43...` | Deployed program ID |
+| `PROTOCOL_FEE_BPS` | `1000` (10%) | Protocol fee for init |
+
+---
+
+## Keypair Management
+
+All keypairs are persisted to `scripts/keys/` for consistency across restarts:
+
+```
+scripts/keys/
+├── authority.json       # Protocol authority (or uses ~/.config/solana/id.json)
+├── treasury.json        # Treasury wallet
+├── searcher-0.json      # Searcher bot 0
+├── searcher-1.json      # Searcher bot 1
+└── ...
 ```
 
-Authority + treasury keypairs at `~/.config/solana/id.json` are NOT deleted by the cleanup above.
+---
+
+## Development
+
+### Prerequisites
+
+- Node.js 20+
+- pnpm 10+
+- A running Solana validator (Surfpool or solana-test-validator)
+
+### Setup
+
+```bash
+cd scripts
+pnpm install
+```
+
+---
+
+## Stack
+
+| Dependency | Purpose |
+|-----------|---------|
+| @flowback/searcher | FlowBack SDK (searcher client, builders) |
+| @solana/web3.js | Solana RPC + transaction construction |
+| bs58 | Base58 encoding/decoding |
+| ws | WebSocket client |
+| tsx | TypeScript execution |
