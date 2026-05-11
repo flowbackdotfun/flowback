@@ -97,7 +97,7 @@ export function MevAnalyzer() {
   };
 
   return (
-    <div className="relative z-2 mx-auto max-w-[1100px] px-6 pb-20">
+    <div className="relative z-2 mx-auto max-w-275 px-6 pb-20">
       {/* Input section */}
       <div className={`mx-auto max-w-2xl pt-40`}>
         {phase === "idle" && (
@@ -116,7 +116,7 @@ export function MevAnalyzer() {
         <div
           className={`mt-10 flex items-stretch gap-2.5 rounded-xl border bg-(--bg-elev) p-1.5 text-center transition-colors duration-200 ${
             phase === "invalid"
-              ? "border-[var(--danger)]"
+              ? "border-(--danger)"
               : "border-(--line) focus-within:border-(--line-strong)"
           }`}
         >
@@ -130,7 +130,7 @@ export function MevAnalyzer() {
             }}
             onKeyDown={(e) => e.key === "Enter" && submit()}
             spellCheck={false}
-            className="h-auto min-w-0 flex-1 border-0 bg-transparent px-3.5 font-mono text-sm text-(--fg) placeholder:text-(--fg-dim) focus-visible:border-0 focus-visible:ring-0"
+            className="h-auto min-w-0 flex-1 border-0 bg-transparent px-3.5 font-mono text-sm text-accent-foreground placeholder:text-(--fg-dim) focus-visible:border-0 focus-visible:ring-0"
           />
           <Button
             onClick={() => submit()}
@@ -157,7 +157,7 @@ export function MevAnalyzer() {
               <button
                 type="button"
                 onClick={useConnectedWallet}
-                className="cursor-pointer rounded-md border border-dashed border-(--line-strong) bg-transparent px-2.5 py-1 font-mono text-[11px] text-(--fg-muted) hover:border-solid hover:text-(--fg)"
+                className="cursor-pointer rounded-md border border-dashed border-(--line-strong) bg-transparent px-2.5 py-1 font-mono text-[11px] text-(--fg-muted) hover:border-solid hover:text-accent-foreground"
               >
                 {publicKey ? "Use connected wallet" : "Connect wallet"}
               </button>
@@ -177,12 +177,12 @@ export function MevAnalyzer() {
           </div>
 
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <Card className="skeleton-shimmer h-[142px] gap-0 bg-(--bg-elev) p-0 ring-[var(--line)]" />
-            <Card className="skeleton-shimmer h-[142px] gap-0 bg-(--bg-elev) p-0 ring-[var(--line)]" />
-            <Card className="skeleton-shimmer h-[142px] gap-0 bg-(--bg-elev) p-0 ring-[var(--line)]" />
+            <Card className="skeleton-shimmer h-35.5 gap-0 bg-(--bg-elev) p-0 ring-(--line)" />
+            <Card className="skeleton-shimmer h-35.5 gap-0 bg-(--bg-elev) p-0 ring-(--line)" />
+            <Card className="skeleton-shimmer h-35.5 gap-0 bg-(--bg-elev) p-0 ring-(--line)" />
           </div>
 
-          <Card className="gap-0 rounded-2xl bg-(--bg-elev) p-0 ring-[var(--line)]">
+          <Card className="gap-0 rounded-2xl bg-(--bg-elev) p-0 ring-(--line)">
             <CardContent className="grid gap-2 p-4">
               <div className="skeleton-shimmer h-16 rounded-xl border border-(--line) bg-(--bg-elev)" />
               <div className="skeleton-shimmer h-16 rounded-xl border border-(--line) bg-(--bg-elev)" />
@@ -204,9 +204,9 @@ export function MevAnalyzer() {
       {/* Error state */}
       {phase === "error" && (
         <div className="mt-14">
-          <Card className="gap-0 bg-(--bg-elev) p-0 ring-[var(--line)]">
+          <Card className="gap-0 bg-(--bg-elev) p-0 ring-(--line)">
             <CardContent className="px-7 py-14 text-center text-[14.5px] text-(--fg-muted)">
-              <div className="mb-3.5 inline-grid size-10 place-items-center rounded-full border border-(--line) bg-(--chip) text-(--danger)">
+              <div className="mb-3.5 inline-grid size-10 place-items-center rounded-full border border-(--line) bg-accent text-(--danger)">
                 <Minus size={18} strokeWidth={1.5} />
               </div>
               <div>{errorMsg}</div>
@@ -218,9 +218,9 @@ export function MevAnalyzer() {
       {/* Empty state */}
       {phase === "empty" && (
         <div className="mt-14">
-          <Card className="gap-0 bg-(--bg-elev) p-0 ring-[var(--line)]">
+          <Card className="gap-0 bg-(--bg-elev) p-0 ring-(--line)">
             <CardContent className="px-7 py-14 text-center text-[14.5px] text-(--fg-muted)">
-              <div className="mb-3.5 inline-grid size-10 place-items-center rounded-full border border-(--line) bg-(--chip) text-(--fg-dim)">
+              <div className="mb-3.5 inline-grid size-10 place-items-center rounded-full border border-(--line) bg-accent text-(--fg-dim)">
                 <Minus size={18} strokeWidth={1.5} />
               </div>
               <div>No swap activity found for this wallet.</div>

@@ -75,7 +75,7 @@ function CopyBtn({ text, size = 12 }: { text: string; size?: number }) {
   };
   return (
     <div
-      className="inline-grid place-items-center bg-transparent border-0 p-0 text-(--fg-dim) cursor-pointer transition-colors duration-150 hover:text-(--fg)"
+      className="inline-grid place-items-center bg-transparent border-0 p-0 text-(--fg-dim) cursor-pointer transition-colors duration-150 hover:text-accent-foreground"
       onClick={click}
       title="Copy"
     >
@@ -92,7 +92,7 @@ function TokenCircle({ symbol }: { symbol: string }) {
   const bg = TOKEN_COLORS[symbol] ?? "oklch(0.7 0 0)";
   return (
     <span
-      className="size-[22px] rounded-full grid place-items-center font-mono text-[9px] font-medium shrink-0"
+      className="size-5.5 rounded-full grid place-items-center font-mono text-[9px] font-medium shrink-0"
       style={{
         background: bg,
         border: "1.5px solid var(--bg-elev)",
@@ -111,7 +111,7 @@ function MevBadge({ type }: { type: MevType }) {
   return (
     <span
       className={`inline-flex items-center gap-1.5 font-mono text-[10.5px] tracking-[0.08em] uppercase px-2.5 py-1 rounded-full border font-medium whitespace-nowrap ${
-        isClean ? "text-(--fg-dim) border-(--line) bg-(--chip)" : ""
+        isClean ? "text-(--fg-dim) border-(--line) bg-accent" : ""
       }`}
       style={
         !isClean
@@ -124,7 +124,7 @@ function MevBadge({ type }: { type: MevType }) {
       }
     >
       <span
-        className="size-[5px] rounded-full"
+        className="size-1.25 rounded-full"
         style={{ background: "currentColor" }}
       />
       {style.label}
@@ -138,7 +138,7 @@ function ConfidenceBadge({ level }: { level: "high" | "medium" }) {
     <span
       className={`inline-flex items-center gap-1 font-mono text-[9.5px] tracking-[0.08em] uppercase px-2 py-0.5 rounded-full border whitespace-nowrap ${
         isHigh
-          ? "text-(--fg-muted) border-(--line-strong) bg-(--chip)"
+          ? "text-(--fg-muted) border-(--line-strong) bg-accent"
           : "text-(--fg-dim) border-(--line) bg-transparent"
       }`}
       title={
@@ -185,7 +185,7 @@ function SwapRowContent({ swap }: { swap: AnalyzedSwap }) {
             <TokenCircle symbol={swap.outputMint} />
           </span>
         </span>
-        <span className="font-mono text-[13px] text-(--fg) inline-flex items-center gap-1.5">
+        <span className="font-mono text-[13px] text-accent-foreground inline-flex items-center gap-1.5">
           {swap.inputMint}
           <span className="text-(--fg-dim)">
             <svg
@@ -207,7 +207,7 @@ function SwapRowContent({ swap }: { swap: AnalyzedSwap }) {
 
       {/* Amounts */}
       <div className="flex flex-col gap-0.5 font-mono text-[12.5px] min-w-0">
-        <span className="text-(--fg)">
+        <span className="text-accent-foreground">
           {swap.inputAmount} {swap.inputMint}
         </span>
         <span className="text-(--fg-dim)">
@@ -247,14 +247,16 @@ function SwapRowContent({ swap }: { swap: AnalyzedSwap }) {
               would&rsquo;ve earned
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger className="inline-grid place-items-center">
+                  <TooltipTrigger
+                    render={<span className="inline-grid place-items-center" />}
+                  >
                     <CircleHelp
                       size={10}
                       strokeWidth={1.5}
                       className="text-(--fg-dim) cursor-help"
                     />
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[200px]">
+                  <TooltipContent side="top" className="max-w-50">
                     Estimate based on mock data. Actual amounts depend on live
                     auction results.
                   </TooltipContent>
@@ -318,7 +320,7 @@ function MobileSwapRow({ swap }: { swap: AnalyzedSwap }) {
             <TokenCircle symbol={swap.outputMint} />
           </span>
         </span>
-        <span className="font-mono text-[13px] text-(--fg) inline-flex items-center gap-1.5">
+        <span className="font-mono text-[13px] text-accent-foreground inline-flex items-center gap-1.5">
           {swap.inputMint}
           <span className="text-(--fg-dim)">
             <svg
@@ -356,14 +358,16 @@ function MobileSwapRow({ swap }: { swap: AnalyzedSwap }) {
               +{wouldNum.toFixed(3)} SOL
               <TooltipProvider>
                 <Tooltip>
-                  <TooltipTrigger className="inline-grid place-items-center">
+                  <TooltipTrigger
+                    render={<span className="inline-grid place-items-center" />}
+                  >
                     <CircleHelp
                       size={10}
                       strokeWidth={1.5}
                       className="text-(--fg-dim) cursor-help"
                     />
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[200px]">
+                  <TooltipContent side="top" className="max-w-50">
                     Estimate based on mock data. Actual amounts depend on live
                     auction results.
                   </TooltipContent>
@@ -380,7 +384,7 @@ function MobileSwapRow({ swap }: { swap: AnalyzedSwap }) {
         style={{ gridArea: "amt" }}
         className="flex gap-2 font-mono text-[12.5px] min-w-0"
       >
-        <span className="text-(--fg)">
+        <span className="text-accent-foreground">
           {swap.inputAmount} {swap.inputMint}
         </span>
         <span className="text-(--fg-dim)">
@@ -495,12 +499,12 @@ function EvidencePanel({ swap }: { swap: AnalyzedSwap }) {
 
       <div className="text-[13.5px] leading-relaxed text-(--fg-muted) px-4 py-3.5 border-l border-dashed border-(--line-strong) tracking-[-0.005em]">
         A bot bought{" "}
-        <b className="text-(--fg) font-medium">{swap.inputAmount}</b> of{" "}
+        <b className="text-accent-foreground font-medium">{swap.inputAmount}</b> of{" "}
         {swap.outputMint} in slot{" "}
-        <b className="text-(--fg) font-medium">{swap.slot.toLocaleString()}</b>,
+        <b className="text-accent-foreground font-medium">{swap.slot.toLocaleString()}</b>,
         your swap executed at a worsened price, then the bot sold in the same
         slot for{" "}
-        <b className="text-(--fg) font-medium">{lossNum.toFixed(3)} SOL</b>{" "}
+        <b className="text-accent-foreground font-medium">{lossNum.toFixed(3)} SOL</b>{" "}
         profit at your expense.
       </div>
     </div>
@@ -526,7 +530,7 @@ function EvidenceCard({
       className={`p-0 gap-0 ${
         isBot
           ? "bg-(--bg) ring-[color-mix(in_oklch,var(--danger)_25%,transparent)]"
-          : "bg-(--bg-elev-2) ring-[var(--line-strong)]"
+          : "bg-(--bg-elev-2) ring-(--line-strong)"
       }`}
     >
       <CardContent className="p-3.5 px-4 grid gap-2">
@@ -537,7 +541,7 @@ function EvidenceCard({
         >
           {role}
         </div>
-        <div className="font-mono text-[12.5px] text-(--fg)">{pubkey}</div>
+        <div className="font-mono text-[12.5px] text-accent-foreground">{pubkey}</div>
         <div className="flex justify-between font-mono text-[11.5px] text-(--fg-dim)">
           <span>slot</span>
           <span className="text-(--fg-muted)">{slot.toLocaleString()}</span>
@@ -701,6 +705,7 @@ export function MevDashboard({
     return arr;
   }, [data.swaps, tab, sort]);
 
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: swaps.length,
     getScrollElement: () => scrollRef.current,
@@ -720,13 +725,13 @@ export function MevDashboard({
       solLoss: p.lossUsd / solPriceUsd,
       worst: i === 0,
     }));
-  }, [data.topPairsByLoss]);
+  }, [data.topPairsByLoss, solPriceUsd]);
 
   return (
     <div className="mt-14 grid gap-7">
       {/* Results header */}
       <div className="flex justify-between items-baseline gap-3 flex-wrap pb-4 border-b border-(--line)">
-        <span className="font-mono text-[13px] text-(--fg) inline-flex items-center gap-2">
+        <span className="font-mono text-[13px] text-accent-foreground inline-flex items-center gap-2">
           {shortAddr(data.wallet)}
           <CopyBtn text={data.wallet} size={13} />
         </span>
@@ -737,7 +742,7 @@ export function MevDashboard({
 
       {/* Stat cards */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <Card className="bg-(--bg-elev) ring-[var(--line)] p-0 gap-0">
+        <Card className="bg-(--bg-elev) ring-(--line) p-0 gap-0">
           <CardContent className="p-7">
             <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-(--fg-dim) mb-4">
               Total lost to MEV
@@ -759,12 +764,12 @@ export function MevDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-(--bg-elev) ring-[var(--line)] p-0 gap-0">
+        <Card className="bg-(--bg-elev) ring-(--line) p-0 gap-0">
           <CardContent className="p-7">
             <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-(--fg-dim) mb-4">
               Swaps affected
             </div>
-            <div className="font-mono text-[clamp(32px,3.4vw,42px)] tracking-tight leading-none text-(--fg) font-medium">
+            <div className="font-mono text-[clamp(32px,3.4vw,42px)] tracking-tight leading-none text-accent-foreground font-medium">
               {affectedCount}
               <span className="text-(--fg-dim) font-normal text-[0.55em] ml-2">
                 / {counts.all}
@@ -780,7 +785,7 @@ export function MevDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-(--bg-elev) ring-[var(--line)] p-0 gap-0">
+        <Card className="bg-(--bg-elev) ring-(--line) p-0 gap-0">
           <CardContent className="p-7">
             <div className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-(--fg-dim) mb-4 flex items-center gap-1.5">
               Estimated cashback
@@ -793,7 +798,7 @@ export function MevDashboard({
                       className="text-(--fg-dim) cursor-help"
                     />
                   </TooltipTrigger>
-                  <TooltipContent side="top" className="max-w-[240px]">
+                  <TooltipContent side="top" className="max-w-60">
                     This is an estimate based on mock auction data. Actual
                     cashback amounts will vary once live auctions are running.
                   </TooltipContent>
@@ -820,10 +825,10 @@ export function MevDashboard({
       </div>
 
       {/* Swap list card */}
-      <Card className="bg-(--bg-elev) ring-[var(--line)] p-0 gap-0 rounded-2xl">
+      <Card className="bg-(--bg-elev) ring-(--line) p-0 gap-0 rounded-2xl">
         {/* List header */}
         <div className="flex justify-between items-center gap-4 px-5 py-4 border-b border-(--line) bg-(--bg-elev-2) rounded-t-2xl flex-wrap">
-          <div className="inline-flex gap-1 bg-(--bg) border border-(--line) rounded-[9px] p-[3px] flex-wrap">
+          <div className="inline-flex gap-1 bg-(--bg) border border-(--line) rounded-[9px] p-0.75 flex-wrap">
             {(
               [
                 { key: "all" as Tab, label: "All", count: data.swaps.length },
@@ -851,8 +856,8 @@ export function MevDashboard({
                 onClick={() => setTab(key)}
                 className={`appearance-none border-0 font-sans text-[13px] font-medium px-3.5 py-1.5 rounded-md cursor-pointer transition-all duration-200 tracking-[-0.005em] inline-flex items-center gap-2 ${
                   tab === key
-                    ? "bg-(--bg-elev-2) text-(--fg)"
-                    : "bg-transparent text-(--fg-muted) hover:text-(--fg)"
+                    ? "bg-(--bg-elev-2) text-accent-foreground"
+                    : "bg-transparent text-(--fg-muted) hover:text-accent-foreground"
                 }`}
               >
                 {label}
@@ -880,7 +885,7 @@ export function MevDashboard({
         {/* Virtualized swap rows */}
         <div
           ref={scrollRef}
-          className="max-h-[600px] overflow-y-auto"
+          className="max-h-150 overflow-y-auto"
         >
           <div
             style={{
@@ -947,10 +952,10 @@ export function MevDashboard({
 
       {/* Breakdown charts */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="bg-(--bg-elev) ring-[var(--line)] p-0 gap-0">
+        <Card className="bg-(--bg-elev) ring-(--line) p-0 gap-0">
           <CardContent className="p-6">
             <div className="flex justify-between items-baseline mb-5">
-              <h3 className="text-sm font-medium text-(--fg) tracking-[-0.01em]">
+              <h3 className="text-sm font-medium text-accent-foreground tracking-[-0.01em]">
                 Top loss by token pair
               </h3>
               <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-(--fg-dim)">
@@ -977,7 +982,7 @@ export function MevDashboard({
                   </span>
                   <span
                     className={`font-mono text-xs ${
-                      pair.worst ? "text-(--danger)" : "text-(--fg)"
+                      pair.worst ? "text-(--danger)" : "text-accent-foreground"
                     }`}
                   >
                     {pair.solLoss.toFixed(3)}
@@ -988,10 +993,10 @@ export function MevDashboard({
           </CardContent>
         </Card>
 
-        <Card className="bg-(--bg-elev) ring-[var(--line)] p-0 gap-0">
+        <Card className="bg-(--bg-elev) ring-(--line) p-0 gap-0">
           <CardContent className="p-6">
             <div className="flex justify-between items-baseline mb-5">
-              <h3 className="text-sm font-medium text-(--fg) tracking-[-0.01em]">
+              <h3 className="text-sm font-medium text-accent-foreground tracking-[-0.01em]">
                 Cumulative MEV loss
               </h3>
               <span className="font-mono text-[10.5px] tracking-[0.08em] uppercase text-(--fg-dim)">
@@ -1004,7 +1009,7 @@ export function MevDashboard({
       </div>
 
       {/* Footer note */}
-      <div className="mt-8 pt-6 border-t border-(--line) text-center text-(--fg-dim) text-[12.5px] leading-relaxed max-w-[720px] mx-auto">
+      <div className="mt-8 pt-6 border-t border-(--line) text-center text-(--fg-dim) text-[12.5px] leading-relaxed max-w-180 mx-auto">
         Results are estimates based on price deviation analysis. Swaps marked
         with high confidence closely match known MEV patterns. Medium confidence
         flags unusual price impact that may or may not be MEV. Losses are

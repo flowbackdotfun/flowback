@@ -56,7 +56,7 @@ export interface MevAnalysisResult {
 
 const SOL_MINT = "So11111111111111111111111111111111111111112";
 const SOL_DECIMALS = 9;
-const MOCK_MODE = process.env.MOCK_CALCULATOR_VALUE === "true";
+const MOCK_MODE = process.env.MOCK_ANALYZER_VALUE === "true";
 const DEFAULT_CASHBACK_RATIO = 0.003;
 
 const VULNERABLE_AMMS = new Set([
@@ -206,12 +206,17 @@ export async function analyzeWalletMev(params: {
     heuristicResults.push({ swap, c });
   }
 
-  // Phase 2: block-level verification for flagged swaps
+  // Phase 2: block-level verification refines confidence for flagged swaps.
+  // We do NOT downgrade a heuristic hit to "clean" just because block fetch
+  // failed or because not all neighbors were found — that produced false
+  // negatives for every swap. Instead:
+  //   • frontrun + backrun confirmed → sandwiched, high confidence
+  //   • only frontrun confirmed       → frontrun,   high confidence
+  //   • only backrun  confirmed       → backrun_target, high confidence
+  //   • neither confirmed             → keep heuristic, demote confidence
   const heliusApiKey = process.env.HELIUS_API_KEY;
   if (heliusApiKey) {
-    const flagged = heuristicResults.filter(
-      (r) => r.c.mevType !== "clean",
-    );
+    const flagged = heuristicResults.filter((r) => r.c.mevType !== "clean");
 
     const slotGroups = new Map<number, typeof flagged>();
     for (const item of flagged) {
@@ -229,22 +234,30 @@ export async function analyzeWalletMev(params: {
       const batch = slotEntries.slice(i, i + VERIFY_CONCURRENCY);
       const results = await Promise.all(
         batch.map(([slot, items]) =>
-          fetchBlockSwapNeighbors(slot, items.map((it) => it.swap), heliusApiKey),
+          fetchBlockSwapNeighbors(
+            slot,
+            items.map((it) => it.swap),
+            heliusApiKey,
+          ),
         ),
       );
       for (const verified of results) {
-        for (const [sig, result] of verified) {
-          if (!result.confirmed) {
-            const item = flagged.find((f) => f.swap.signature === sig);
-            if (item) {
-              item.c = {
-                mevType: "clean",
-                confidence: "high",
-                estimatedLossUsd: 0,
-                lossSol: 0,
-                expectedOutput: item.swap.outputAmount,
-              };
-            }
+        for (const [sig, vr] of verified) {
+          const item = flagged.find((f) => f.swap.signature === sig);
+          if (!item) continue;
+
+          if (vr.frontrunSig && vr.backrunSig) {
+            item.c.mevType = "sandwiched";
+            item.c.confidence = "high";
+          } else if (vr.frontrunSig) {
+            item.c.mevType = "frontrun";
+            item.c.confidence = "high";
+          } else if (vr.backrunSig) {
+            item.c.mevType = "backrun_target";
+            item.c.confidence = "high";
+          } else {
+            // No neighbor evidence — keep heuristic but lower confidence.
+            item.c.confidence = "medium";
           }
         }
       }
@@ -843,11 +856,11 @@ async function fetchBlockSwapNeighbors(
         if (frontrun && backrun) break;
       }
 
-      if (frontrun && backrun) {
+      if (frontrun || backrun) {
         results.set(swap.signature, {
-          confirmed: true,
-          frontrunSig: frontrun.sig,
-          backrunSig: backrun.sig,
+          confirmed: Boolean(frontrun && backrun),
+          frontrunSig: frontrun?.sig,
+          backrunSig: backrun?.sig,
         });
       }
     }

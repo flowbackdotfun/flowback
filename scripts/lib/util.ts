@@ -10,7 +10,9 @@ export const DEFAULT_RELAY_REST =
   process.env.RELAY_REST_URL ?? "http://localhost:3001";
 export const DEFAULT_RELAY_WS =
   process.env.RELAY_WS_URL ?? "ws://localhost:3002";
-export const DEFAULT_PROGRAM_ID = process.env.FLOWBACK_PROGRAM_ID;
+export const DEFAULT_PROGRAM_ID =
+  process.env.FLOWBACK_PROGRAM_ID ??
+  "BLZeEY7GZ5AK6gAZQW5BVi9w71yoJig4Kc97bL1HAnP8";
 
 const KEYS_DIR = path.join(import.meta.dirname ?? __dirname, "..", "keys");
 

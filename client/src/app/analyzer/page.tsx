@@ -5,7 +5,7 @@ import { Nav } from "@/components/flowback/nav";
 import { MevAnalyzer } from "@/components/flowback/mev-analyzer";
 import type { FlowTheme } from "@/components/flowback/types";
 
-export default function CalculatorPage() {
+export default function AnalyzerPage() {
   const [theme, setTheme] = useState<FlowTheme>("dark");
   const skipFirst = useRef(true);
 

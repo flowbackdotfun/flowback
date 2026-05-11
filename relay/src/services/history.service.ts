@@ -41,7 +41,7 @@ export interface HistoryResult {
 /**
  * Returns cashback history for a wallet: lifetime totals plus a paginated
  * list of CashbackSettled events, each joined with its auction's trade
- * context (mints + input amount + bundle id) for display in the MEV calculator.
+ * context (mints + input amount + bundle id) for display in the MEV analyzer.
  */
 export async function getCashbackHistory(
   params: HistoryParams,
