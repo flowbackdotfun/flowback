@@ -12,10 +12,3 @@ export class JupiterUnavailableError extends Error {
   }
 }
 
-export class HeliusUnavailableError extends Error {
-  constructor(cause: Error) {
-    super(`helius_unavailable: ${cause.message}`);
-    this.name = "HeliusUnavailableError";
-    this.cause = cause;
-  }
-}

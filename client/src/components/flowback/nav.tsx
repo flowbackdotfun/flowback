@@ -41,8 +41,7 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
 
   const close = () => setMenuOpen(false);
   const onSwapPage = pathname === "/swap";
-  const onAnalyzerPage = pathname === "/analyzer";
-  const isAppPage = onSwapPage || onAnalyzerPage;
+  const isAppPage = onSwapPage;
   const shortWallet = publicKey
     ? `${publicKey.toBase58().slice(0, 4)}...${publicKey.toBase58().slice(-4)}`
     : "";
@@ -82,12 +81,6 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               <a href={DOCS_URL}>Docs</a>
             </>
           ) : null}
-          <Link
-            href="/analyzer"
-            style={onAnalyzerPage ? { color: "var(--fg)" } : undefined}
-          >
-            Analyzer
-          </Link>
         </div>
         <div className="nav-right">
           <button
@@ -163,9 +156,6 @@ export function Nav({ onToggleTheme, theme }: NavProps) {
               </a>
             </>
           ) : null}
-          <Link href="/analyzer" onClick={close}>
-            Analyzer
-          </Link>
           {onSwapPage ? (
             <button
               type="button"

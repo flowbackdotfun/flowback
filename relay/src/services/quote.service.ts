@@ -15,6 +15,7 @@ export { JupiterUnavailableError } from "./errors.js";
 
 type Db = typeof defaultDb;
 
+const MOCK_CASHBACK = process.env.MOCK_CASHBACK === "true";
 const CASHBACK_SAMPLE_LIMIT = 50;
 
 export interface QuoteServiceDeps {
@@ -61,12 +62,14 @@ export async function quoteWithCashbackEstimate(
     throw err;
   }
 
-  const cashbackEstimate = await estimateCashback(
-    deps.db ?? defaultDb,
-    params.inputMint,
-    params.outputMint,
-    bucketFor(params.amount),
-  );
+  const cashbackEstimate = MOCK_CASHBACK
+    ? fallbackEstimate(bucketFor(params.amount))
+    : await estimateCashback(
+        deps.db ?? defaultDb,
+        params.inputMint,
+        params.outputMint,
+        bucketFor(params.amount),
+      );
 
   return { quote, cashbackEstimate };
 }
@@ -95,7 +98,7 @@ async function estimateCashback(
     .map((r) => r.winningBidLamports)
     .filter((b): b is bigint => b !== null && b !== undefined);
 
-  if (bids.length === 0) return null;
+  if (bids.length === 0) return fallbackEstimate(sizeBucket);
 
   bids.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
   const mid = Math.floor(bids.length / 2);
@@ -105,4 +108,17 @@ async function estimateCashback(
       : (bids[mid - 1]! + bids[mid]!) / 2n;
 
   return { lamports: median.toString(), sampleSize: bids.length };
+}
+
+const BUCKET_RANGES: Record<SizeBucket, [min: number, max: number]> = {
+  small: [300_000, 800_000],
+  medium: [1_500_000, 4_000_000],
+  large: [8_000_000, 25_000_000],
+  whale: [50_000_000, 120_000_000],
+};
+
+function fallbackEstimate(sizeBucket: SizeBucket): CashbackEstimate {
+  const [min, max] = BUCKET_RANGES[sizeBucket];
+  const lamports = min + Math.floor(Math.random() * (max - min));
+  return { lamports: lamports.toString(), sampleSize: 0 };
 }

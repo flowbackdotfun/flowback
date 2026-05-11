@@ -77,14 +77,39 @@ export interface JupiterBuildResponse {
   [key: string]: unknown;
 }
 
-/**
- * Uses the /build endpoint for both quote and build — same routing
- * constraints (dexes, onlyDirectRoutes) are always applied.
- * For quote-only calls, a dummy taker is used since we just need pricing.
- */
 const DUMMY_TAKER = "11111111111111111111111111111111";
 
-function buildQuery(params: {
+function quoteQuery(params: {
+  inputMint: string;
+  outputMint: string;
+  amount: string;
+  slippageBps?: number;
+}): URLSearchParams {
+  const query = new URLSearchParams({
+    inputMint: params.inputMint,
+    outputMint: params.outputMint,
+    amount: params.amount,
+    taker: DUMMY_TAKER,
+  });
+  if (params.slippageBps !== undefined && params.slippageBps > 0) {
+    query.set("slippageBps", params.slippageBps.toString());
+  } else {
+    query.set("slippageBps", "rtse");
+  }
+  if (JUPITER_DEXES) {
+    query.set("dexes", JUPITER_DEXES);
+  }
+  if (JUPITER_DIRECT_ROUTES) {
+    query.set("onlyDirectRoutes", "true");
+  }
+  query.set("maxAccounts", "54");
+  if (MOCK_JITO) {
+    query.set("wrapAndUnwrapSol", "false");
+  }
+  return query;
+}
+
+function swapQuery(params: {
   inputMint: string;
   outputMint: string;
   amount: string;
@@ -153,11 +178,10 @@ export async function getQuote(
     };
   }
 
-  const query = buildQuery({
+  const query = quoteQuery({
     inputMint,
     outputMint,
     amount: amount.toString(),
-    taker: DUMMY_TAKER,
     slippageBps,
   });
 
@@ -208,7 +232,7 @@ export async function buildSwap(
     };
   }
 
-  const query = buildQuery({
+  const query = swapQuery({
     inputMint: params.inputMint,
     outputMint: params.outputMint,
     amount: params.amount.toString(),

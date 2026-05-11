@@ -34,12 +34,19 @@ const BOT_NAME = `searcher-${BOT_INDEX}`;
 const ESCROW_TARGET_LAMPORTS = 2_000_000_000n; // 2 SOL — enough for hundreds of bids
 const TIP_LAMPORTS = 10_000n;
 
-/** Small randomness so multiple bots produce distinct bids — winner is highest. */
+const BUCKET_BASE: Record<string, [min: bigint, max: bigint]> = {
+  small: [300_000n, 800_000n],
+  medium: [1_500_000n, 4_000_000n],
+  large: [8_000_000n, 25_000_000n],
+  whale: [50_000_000n, 120_000_000n],
+};
+
 function bidLamportsFor(hint: SearcherHint): bigint {
-  const base = 1_000_000n; // 0.001 SOL
-  const variance = BigInt(BOT_INDEX) * 200_000n;
-  const jitter = BigInt(Math.floor(Math.random() * 100_000));
-  return base + variance + jitter;
+  const [min, max] = BUCKET_BASE[hint.sizeBucket] ?? BUCKET_BASE.medium!;
+  const range = max - min;
+  const base = min + BigInt(Math.floor(Math.random() * Number(range)));
+  const perBot = BigInt(BOT_INDEX) * (range / 10n);
+  return base + perBot;
 }
 
 async function ensureEscrow(

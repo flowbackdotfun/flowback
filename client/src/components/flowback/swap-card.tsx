@@ -836,7 +836,7 @@ export function SwapCard({
                 <>
                   {" "}
                   <a
-                    href={`https://explorer.solana.com/tx/${status.signature}`}
+                    href={IS_FORK ? `https://solscan.io/tx/${status.signature}?cluster=custom&customUrl=http://127.0.0.1:8899` : `https://solscan.io/tx/${status.signature}`}
                     rel="noopener noreferrer"
                     target="_blank"
                   >

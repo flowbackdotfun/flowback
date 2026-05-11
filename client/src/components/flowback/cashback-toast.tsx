@@ -5,6 +5,8 @@ import { Icon } from "./icons";
 import { X } from "lucide-react";
 import { formatLamports } from "@/lib/flowback-relay";
 
+const IS_FORK = process.env.NEXT_PUBLIC_IS_FORK === "true";
+
 type CashbackToastProps = {
   lamports: string;
   txSignature: string;
@@ -31,7 +33,9 @@ export function CashbackToast({ lamports, txSignature, onDismiss }: CashbackToas
   }
 
   const solAmount = formatLamports(lamports);
-  const explorerUrl = `https://explorer.solana.com/tx/${txSignature}`;
+  const explorerUrl = IS_FORK
+    ? `https://solscan.io/tx/${txSignature}?cluster=custom&customUrl=http://127.0.0.1:8899`
+    : `https://solscan.io/tx/${txSignature}`;
 
   return (
     <>

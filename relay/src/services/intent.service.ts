@@ -240,7 +240,7 @@ async function finalizeAuction(args: FinalizeParams): Promise<void> {
       winningBidLamports: result.winnerBid?.userCashbackLamports ?? null,
     });
 
-    // In mock/demo mode the on-chain settle tx can't land (Surfpool
+    // In mock mode the on-chain settle tx can't land (Surfpool
     // doesn't support the Ed25519 precompile), so emit cashback directly.
     if (
       result.status === "landed" &&

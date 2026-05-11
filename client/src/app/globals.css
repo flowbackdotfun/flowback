@@ -156,7 +156,6 @@
 
 @import "../styles/flowback-surfaces.css";
 @import "../styles/flowback-swap.css";
-@import "../styles/flowback-analyzer.css";
 
 body::before {
   content: "";
