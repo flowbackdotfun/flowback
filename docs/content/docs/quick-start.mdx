@@ -294,4 +294,8 @@ declare function yourBuildBackrunTx(
 
 ## Reference implementation
 
-The FlowBack monorepo ships a working searcher at `seed-bot/src/index.ts`. It's an internal "seed" searcher used to guarantee demo cashback during the hackathon. It is not optimized for profitability, but it is a complete, production-shaped integration of every API on this page.
+The FlowBack monorepo ships a complete integration example at [`seed-bot/`](https://github.com/flowback/flowback/tree/main/seed-bot). It covers every step on this page in a single runnable file - keypair loading, escrow setup, connection, bidding, and result handling.
+
+It bids on every hint with a fixed amount and uses a no-op backrun. Replace `computeBid()` with your pricing model and `buildBackrunTx()` with your arb logic - everything else (auth, escrow, bid signing, tip construction) stays the same.
+
+See `seed-bot/README.md` for env vars and setup.
