@@ -72,11 +72,7 @@ Returns `{ auctionId }`.
 
 ### `GET /history/:walletAddress`
 
-Returns cashback history for a wallet (used by the MEV calculator page).
-
-### `POST /mev/analyze`
-
-Analyzes a wallet's historical swaps for MEV exposure.
+Returns cashback history for a wallet.
 
 ---
 
@@ -142,9 +138,6 @@ RELAY_KEYPAIR=[12,34,...]                   # JSON byte array - signs Tx3 + Jito
 
 # ── Auction ────────────────────────────────────────────────
 AUCTION_WINDOW_MS=200                       # Bid collection window (ms)
-
-# ── Helius ─────────────────────────────────────────────────
-HELIUS_API_KEY=...                          # For MEV analysis (historical lookups)
 
 # ── Redis ──────────────────────────────────────────────────
 UPSTASH_REDIS_URL=redis://localhost:6379    # Rate limiting cache

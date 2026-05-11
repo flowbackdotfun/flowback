@@ -34,7 +34,6 @@ The swap flow communicates with the relay via REST (quote → prepare → intent
 | Component       | Description                                                                                       |
 | --------------- | ------------------------------------------------------------------------------------------------- |
 | `SwapCard`      | Debounced quote fetching, slippage config, multi-step swap flow (quote → prepare → sign → submit) |
-| `MevDashboard`  | Historical swap analysis with MEV breakdown by type (sandwich, frontrun, backrun)                 |
 | `CashbackToast` | Green slide-in notification on `cashback_confirmed`                                               |
 | `Nav`           | Navigation bar with theme toggle, wallet connect, mobile menu                                     |
 
@@ -121,7 +120,6 @@ src/
 ├── components/
 │   ├── flowback/                 Brand components
 │   │   ├── swap-card.tsx         Main swap interface
-│   │   ├── mev-dashboard.tsx     MEV analysis visualization
 │   │   ├── cashback-toast.tsx    Cashback notification
 │   │   ├── nav.tsx               Navigation bar
 │   │   ├── landing-page.tsx      Landing orchestrator
@@ -135,6 +133,5 @@ src/
 │   └── wallet-provider.tsx       Solana wallet adapter setup
 └── styles/
     ├── flowback-swap.css         Swap page styles
-    ├── flowback-calculator.css   Calculator styles
     └── flowback-surfaces.css     Shared surface styles
 ```
