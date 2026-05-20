@@ -622,9 +622,20 @@ export function SwapCard({
             const code = inner[1];
             if (typeof code === "object" && code !== null && "Custom" in code) {
               const custom = (code as { Custom: number }).Custom;
-              if (custom === 6001) detail = " (slippage exceeded)";
-              else if (custom === 1) detail = " (insufficient funds)";
-              else detail = ` (code ${custom})`;
+              // Jupiter RouteV2 rejects with 6025 (SPL Token with 1) when the
+              // input token account can't cover the swap — say so plainly
+              // rather than the misleading generic "price may have moved".
+              if (custom === 6025 || custom === 1) {
+                throw new SwapPreflightError(
+                  `Insufficient ${inputToken.symbol} balance for this swap.`,
+                );
+              }
+              if (custom === 6001) {
+                throw new SwapPreflightError(
+                  "Price moved past your slippage limit. Refresh the quote and try again.",
+                );
+              }
+              detail = ` (code ${custom})`;
             } else if (typeof code === "string") {
               detail = ` (${code})`;
             }
@@ -951,7 +962,14 @@ function formatPriceImpact(value: string) {
   return `${parsed.toFixed(2)}%`;
 }
 
+/**
+ * A pre-submit (quote / prepare / simulate) failure whose message is already
+ * written for the user. `getErrorMessage` returns it verbatim.
+ */
+class SwapPreflightError extends Error {}
+
 function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof SwapPreflightError) return error.message;
   if (error instanceof RelayRequestError) {
     if (error.status === 502)
       return "Jupiter is temporarily unavailable. Try again in a moment.";
