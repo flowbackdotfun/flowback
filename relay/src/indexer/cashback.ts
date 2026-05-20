@@ -1,83 +1,120 @@
-import { createHash } from "node:crypto";
-import { PublicKey } from "@solana/web3.js";
-import { address, createSolanaRpcSubscriptions } from "@solana/kit";
+import bs58 from "bs58";
 import { eq } from "drizzle-orm";
 
 import { db as defaultDb } from "../db/client.js";
 import { auctions, cashbackEvents } from "../db/schema.js";
+import {
+  type CashbackSettledEvent,
+  decodeCashbackSettled,
+} from "../geyser/cashback-event.js";
+import {
+  buildProgramTxRequest,
+  type GeyserSource,
+  type GeyserSubscription,
+  type SubscribeUpdate,
+} from "../geyser/types.js";
 import type { PendingCashbackRegistry } from "../services/pending-cashback.js";
 import type { UserStatusEmitter } from "../ws/user.js";
 
-type RpcSubscriptions = ReturnType<typeof createSolanaRpcSubscriptions>;
 type Db = typeof defaultDb;
 
 export interface CashbackIndexerDeps {
-  rpcSubscriptions: RpcSubscriptions;
+  source: GeyserSource;
   programId: string;
   emitter: UserStatusEmitter;
   pendingCashbacks: PendingCashbackRegistry;
   db?: Db;
 }
 
-// Anchor event discriminator: sha256("event:CashbackSettled")[0..8]
-const EVENT_DISCRIMINATOR = createHash("sha256")
-  .update("event:CashbackSettled")
-  .digest()
-  .subarray(0, 8);
+const RECONNECT_BASE_MS = 1_000;
+const RECONNECT_MAX_MS = 30_000;
+// A stream that stayed open at least this long is treated as healthy: the next
+// reconnect restarts from the base delay rather than an inflated backoff.
+const STABLE_CONNECTION_MS = 30_000;
 
-// Fixed event payload size: 8 disc + 32 user + 32 searcher + 8 bid + 8 cashback + 8 fee + 8 ts
-const EVENT_BYTE_LENGTH = 104;
-
+/**
+ * Start indexing on-chain `CashbackSettled` events off a `GeyserSource`.
+ * Returns a function that aborts the indexer (stops the reconnect loop and
+ * closes the active subscription).
+ */
 export function startCashbackIndexer(deps: CashbackIndexerDeps): () => void {
   const abort = new AbortController();
-  void runSubscription(deps, abort.signal);
+  void runIndexer(deps, abort.signal);
   return () => abort.abort();
 }
 
-async function runSubscription(
+/**
+ * Subscribe to the geyser stream and process updates, reconnecting with
+ * exponential backoff whenever the stream errors or ends. Unlike the previous
+ * RPC-subscription indexer, a dropped connection no longer silently kills
+ * indexing — it reconnects until aborted.
+ */
+async function runIndexer(
   deps: CashbackIndexerDeps,
   signal: AbortSignal,
 ): Promise<void> {
   const db = deps.db ?? defaultDb;
+  const request = buildProgramTxRequest(deps.programId);
+  let backoff = RECONNECT_BASE_MS;
 
-  try {
-    const programAddr = address(deps.programId);
-    const subscription = await deps.rpcSubscriptions
-      .logsNotifications(
-        { mentions: [programAddr] },
-        { commitment: "confirmed" },
-      )
-      .subscribe({ abortSignal: signal });
+  while (!signal.aborted) {
+    const startedAt = Date.now();
+    let subscription: GeyserSubscription | undefined;
 
-    for await (const notification of subscription) {
-      const { signature, logs, err } = notification.value;
-      if (err) continue;
+    try {
+      subscription = await deps.source.subscribe(request);
+      const active = subscription;
+      const onAbort = () => active.close();
+      signal.addEventListener("abort", onAbort, { once: true });
 
-      const event = parseCashbackSettledEvent(logs);
-      if (!event) continue;
-
-      await handleEvent(
-        db,
-        deps.emitter,
-        deps.pendingCashbacks,
-        signature,
-        event,
-      );
+      try {
+        for await (const update of active.updates) {
+          if (signal.aborted) break;
+          await handleUpdate(db, deps, update);
+        }
+      } finally {
+        signal.removeEventListener("abort", onAbort);
+      }
+    } catch (err) {
+      if (!signal.aborted) console.error("[indexer] geyser stream error:", err);
+    } finally {
+      subscription?.close();
     }
-  } catch (err) {
-    if (!signal.aborted) {
-      console.error("[indexer] subscription error:", err);
+
+    if (signal.aborted) return;
+
+    if (Date.now() - startedAt > STABLE_CONNECTION_MS) {
+      backoff = RECONNECT_BASE_MS;
     }
+    console.warn(
+      `[indexer] geyser stream closed; reconnecting in ${backoff}ms`,
+    );
+    await delay(backoff, signal);
+    backoff = Math.min(backoff * 2, RECONNECT_MAX_MS);
   }
 }
 
-interface CashbackSettledEvent {
-  user: string;
-  searcher: string;
-  bidAmountLamports: bigint;
-  userCashbackLamports: bigint;
-  protocolFeeLamports: bigint;
-  timestamp: bigint;
+/**
+ * Inspect one geyser update. Only confirmed, non-failed transactions carrying
+ * a `CashbackSettled` log are acted on; everything else is ignored.
+ */
+async function handleUpdate(
+  db: Db,
+  deps: CashbackIndexerDeps,
+  update: SubscribeUpdate,
+): Promise<void> {
+  const info = update.transaction?.transaction;
+  if (!info) return;
+  if (info.meta?.err) return;
+
+  const logs = info.meta?.logMessages;
+  if (!logs || logs.length === 0) return;
+
+  const event = decodeCashbackSettled(logs);
+  if (!event) return;
+
+  const signature = bs58.encode(info.signature);
+  await handleEvent(db, deps.emitter, deps.pendingCashbacks, signature, event);
 }
 
 async function handleEvent(
@@ -159,63 +196,19 @@ async function resolveAuctionId(
   return rows[0]?.id ?? null;
 }
 
-function parseCashbackSettledEvent(
-  logs: readonly string[],
-): CashbackSettledEvent | null {
-  for (const log of logs) {
-    if (!log.startsWith("Program data: ")) continue;
-
-    let bytes: Buffer;
-    try {
-      bytes = Buffer.from(log.slice("Program data: ".length), "base64");
-    } catch {
-      continue;
+function delay(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
     }
-
-    if (bytes.length !== EVENT_BYTE_LENGTH) continue;
-    if (!matchesDiscriminator(bytes)) continue;
-
-    return decodeEvent(bytes);
-  }
-
-  return null;
-}
-
-function matchesDiscriminator(bytes: Buffer): boolean {
-  for (let i = 0; i < 8; i++) {
-    if (bytes[i] !== EVENT_DISCRIMINATOR[i]) return false;
-  }
-  return true;
-}
-
-function decodeEvent(bytes: Buffer): CashbackSettledEvent {
-  let offset = 8; // skip discriminator
-
-  const user = new PublicKey(bytes.subarray(offset, offset + 32)).toBase58();
-  offset += 32;
-
-  const searcher = new PublicKey(
-    bytes.subarray(offset, offset + 32),
-  ).toBase58();
-  offset += 32;
-
-  const bidAmountLamports = bytes.readBigUInt64LE(offset);
-  offset += 8;
-
-  const userCashbackLamports = bytes.readBigUInt64LE(offset);
-  offset += 8;
-
-  const protocolFeeLamports = bytes.readBigUInt64LE(offset);
-  offset += 8;
-
-  const timestamp = bytes.readBigInt64LE(offset);
-
-  return {
-    user,
-    searcher,
-    bidAmountLamports,
-    userCashbackLamports,
-    protocolFeeLamports,
-    timestamp,
-  };
+    let timer: NodeJS.Timeout;
+    const done = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+  });
 }

@@ -1,15 +1,12 @@
 import "dotenv/config";
 import express from "express";
 import { App } from "uWebSockets.js";
-import {
-  createKeyPairSignerFromBytes,
-  createSolanaRpc,
-  createSolanaRpcSubscriptions,
-} from "@solana/kit";
+import { createKeyPairSignerFromBytes, createSolanaRpc } from "@solana/kit";
 import { Connection, Keypair } from "@solana/web3.js";
 
 import { AuctionManager } from "./auction/manager.js";
 import { ensureRelayDbSchema } from "./db/client.js";
+import { createGeyserSource } from "./geyser/factory.js";
 import { startCashbackIndexer } from "./indexer/cashback.js";
 import { createHistoryRoutes } from "./routes/history.route.js";
 import { createIntentRoutes } from "./routes/intent.route.js";
@@ -27,7 +24,6 @@ const WS_PORT = Number(process.env.WS_PORT ?? 3002);
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN ?? "http://localhost:3000";
 
 const SOLANA_RPC_URL = requireEnv("SOLANA_RPC_URL");
-const SOLANA_RPC_WS_URL = requireEnv("SOLANA_RPC_WS_URL");
 const FLOWBACK_PROGRAM_ID = requireEnv("FLOWBACK_PROGRAM_ID");
 const TREASURY_WALLET = requireEnv("TREASURY_WALLET");
 
@@ -35,7 +31,6 @@ async function main(): Promise<void> {
   await ensureRelayDbSchema();
 
   const rpc = createSolanaRpc(SOLANA_RPC_URL);
-  const rpcSubscriptions = createSolanaRpcSubscriptions(SOLANA_RPC_WS_URL);
   const connection = new Connection(SOLANA_RPC_URL, "confirmed");
   const relayKeypair = loadRelayKeypair();
 
@@ -91,12 +86,21 @@ async function main(): Promise<void> {
     console.log(`[relay] ws listening on :${WS_PORT}`);
   });
 
-  startCashbackIndexer({
-    rpcSubscriptions,
+  const geyserSource = createGeyserSource();
+  const stopIndexer = startCashbackIndexer({
+    source: geyserSource,
     programId: FLOWBACK_PROGRAM_ID,
     emitter,
     pendingCashbacks,
   });
+
+  const shutdown = (sig: string): void => {
+    console.log(`[relay] ${sig} received, shutting down`);
+    stopIndexer();
+    process.exit(0);
+  };
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
 }
 
 function requireEnv(name: string): string {

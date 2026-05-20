@@ -124,7 +124,15 @@ async function main(): Promise<void> {
   log("  4. Set wallet RPC to:  " + DEFAULT_RPC);
   log("  5. Airdrop SOL:");
   log("     solana airdrop 10 <WALLET_PUBKEY> -u " + DEFAULT_RPC);
-  log("  6. Swap!");
+  log("  6. Seed test USDC (USDC→SOL swaps need USDC to spend):");
+  log(
+    `     curl -s ${DEFAULT_RPC} -X POST -H 'content-type: application/json' \\`,
+  );
+  log(
+    `       -d '{"jsonrpc":"2.0","id":1,"method":"surfnet_setTokenAccount",` +
+      `"params":["<WALLET_PUBKEY>","EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",{"amount":1000000000}]}'`,
+  );
+  log("  7. Swap!");
   log("");
 }
 
